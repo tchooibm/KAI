@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Kai Chat</title>
+    <style>
+        body { font-family: sans-serif; max-width: 700px; margin: 40px auto; }
+        .msg { padding: 8px 12px; margin: 6px 0; border-radius: 8px; white-space: pre-wrap; }
+        .user { background: #dbeafe; margin-left: 20%; }
+        .bot { background: #f3f4f6; margin-right: 20%; }
+        .error { background: #fee2e2; color: #991b1b; }
+        form { display: flex; gap: 8px; margin-top: 16px; }
+        input { flex: 1; padding: 8px; }
+    </style>
+</head>
+<body>
+<h1>Kai Chat</h1>
+
+<div th:each="m : ${messages}" class="msg" th:classappend="${m.sender}" th:text="${m.text}"></div>
+
+<!-- The model call is synchronous, so disable the button while waiting for the reply -->
+<form th:action="@{/chat}" method="post" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Thinking...';">
+    <input name="message" placeholder="Type a message..." required autofocus autocomplete="off">
+    <button type="submit">Send</button>
+</form>
+
+<script>window.scrollTo(0, document.body.scrollHeight);</script>
+</body>
+</html>
