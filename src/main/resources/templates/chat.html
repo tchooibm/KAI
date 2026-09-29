@@ -1,48 +1,175 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Kai</title>
     <style>
-        body { font-family: sans-serif; max-width: 900px; margin: 40px auto; }
-        .meta { color: #6b7280; font-size: 0.9em; }
-        .msg { padding: 8px 12px; margin: 6px 0; border-radius: 8px; white-space: pre-wrap; }
-        .user { background: #dbeafe; margin-left: 20%; }
-        .bot { background: #f3f4f6; margin-right: 10%; }
-        .error { background: #fee2e2; color: #991b1b; }
-        table { width: 100%; border-collapse: collapse; margin-top: 8px; white-space: normal; background: white; }
-        th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; }
-        tr.yes { background: #fef3c7; }
-        form { display: flex; gap: 8px; margin-top: 16px; }
-        input { flex: 1; padding: 8px; }
+        :root {
+            color-scheme: light;
+            --paper: #f6f8f9;
+            --sheet: #ffffff;
+            --ink: #17252b;
+            --muted: #5f6f76;
+            --line: #dde4e7;
+            --teal: #1f5c6b;
+            --marker: #ffe58a;   /* highlighter: files that must change */
+            --manual: #b45309;   /* affected, but docx/pptx/pdf: edit by hand */
+            --error: #b42318;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; background: var(--paper); color: var(--ink);
+            font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            display: flex; flex-direction: column; min-height: 100vh;
+        }
+        header, main, footer { width: 100%; max-width: 980px; margin: 0 auto; padding: 0 24px; }
+        header { display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap; padding-top: 28px; padding-bottom: 16px; }
+        h1 { margin: 0; font: 600 30px/1 Charter, "Iowan Old Style", Georgia, serif; letter-spacing: -0.01em; }
+        .where { color: var(--muted); font-size: 13px; display: flex; gap: 18px; flex-wrap: wrap; }
+        code, .file { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+        .where code { color: var(--ink); }
+
+        main { flex: 1; padding-bottom: 140px; }
+
+        .empty { margin: 12vh 0 0; max-width: 560px; }
+        .empty h2 { font: 500 24px/1.3 Charter, "Iowan Old Style", Georgia, serif; margin: 0 0 8px; }
+        .empty p { color: var(--muted); margin: 0 0 18px; }
+        .examples { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+        .examples button {
+            font: inherit; text-align: left; cursor: pointer; color: var(--teal);
+            background: var(--sheet); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px;
+        }
+        .examples button:hover { border-color: var(--teal); }
+
+        .msg { margin: 18px 0; }
+        .user { display: flex; justify-content: flex-end; }
+        .user p {
+            margin: 0; max-width: 70%; background: var(--teal); color: #fff;
+            padding: 10px 14px; border-radius: 14px 14px 4px 14px; white-space: pre-wrap;
+        }
+        .error p {
+            margin: 0; color: var(--error); background: #fdecea; border: 1px solid #f5c2bd;
+            padding: 10px 14px; border-radius: 8px; white-space: pre-wrap;
+        }
+        .bot .summary { margin: 0 0 10px; font-weight: 500; }
+
+        .report { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; font-weight: 500; font-size: 13px; color: var(--muted); padding: 10px 14px; border-bottom: 1px solid var(--line); }
+        td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+        tr:last-child td { border-bottom: 0; }
+        td.name { white-space: nowrap; width: 1%; }
+        td.why { color: var(--muted); }
+
+        /* The file name is highlighted like a marker pen on a printout */
+        .AFFECTED .file { background: linear-gradient(transparent 45%, var(--marker) 45%, var(--marker) 90%, transparent 90%); }
+        .result { font-size: 13px; font-weight: 600; white-space: nowrap; }
+        .AFFECTED .result { color: var(--ink); }
+        .MANUAL .result { color: var(--manual); }
+        .ERROR .result, .ERROR td.why { color: var(--error); }
+        .NOT_AFFECTED .result { color: var(--muted); font-weight: 400; }
+
+        details { border-top: 1px solid var(--line); }
+        summary { cursor: pointer; padding: 10px 14px; color: var(--muted); font-size: 13px; }
+        details table { border-top: 1px solid var(--line); }
+
+        footer {
+            position: fixed; left: 0; right: 0; bottom: 0; max-width: none;
+            background: linear-gradient(transparent, var(--paper) 30%); padding-top: 28px; padding-bottom: 22px;
+        }
+        form { max-width: 932px; margin: 0 auto; display: flex; gap: 8px; background: var(--sheet);
+               border: 1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 6px 24px rgba(23, 37, 43, 0.08); }
+        form:focus-within { border-color: var(--teal); }
+        input { flex: 1; border: 0; font: inherit; padding: 10px 12px; background: transparent; color: var(--ink); }
+        input:focus { outline: none; }
+        button[type=submit] {
+            font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 0 18px;
+            background: var(--teal); color: #fff; cursor: pointer;
+        }
+        button[type=submit]:disabled { opacity: 0.6; cursor: wait; }
+        button:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+        @media (max-width: 640px) {
+            .user p { max-width: 90%; }
+            td.name { white-space: normal; }
+            th:nth-child(3), td.why { display: none; }
+        }
     </style>
 </head>
 <body>
-<h1>Kai</h1>
-<p class="meta">
-    Scanning <code th:text="${target.repository + ':' + target.location}"></code>
-    &middot; Backups <code th:text="${backupDir}"></code>
-</p>
+<header>
+    <h1>Kai</h1>
+    <div class="where">
+        <span>Scanning <code th:text="${target.repository + ':' + target.location}"></code></span>
+        <span>Backups in <code th:text="${backupDir}"></code></span>
+    </div>
+</header>
 
-<div th:each="m : ${messages}" class="msg" th:classappend="${m.sender}">
-    <div th:text="${m.text}"></div>
-    <table th:if="${m.report}">
-        <tr><th>File</th><th>Affected</th><th>Reason</th></tr>
-        <tr th:each="f : ${m.report.findings}" th:classappend="${f.affected} ? 'yes'">
-            <td th:text="${f.file}"></td>
-            <td th:text="${f.affected} ? 'Yes' : 'No'"></td>
-            <td th:text="${f.reason}"></td>
-        </tr>
-    </table>
-</div>
+<main>
+    <section class="empty" th:if="${#lists.isEmpty(messages)}">
+        <h2>Describe a change, and Kai finds every document it touches.</h2>
+        <p>Each file is checked by the scanner agent. Nothing is written until you review and approve.</p>
+        <div class="examples">
+            <button type="button">Rename the product from Acme Portal to Kai Hub</button>
+            <button type="button">We now require Java 21 instead of 17</button>
+            <button type="button">Change the application port from 8080 to 9090</button>
+        </div>
+    </section>
 
-<!-- Scans are synchronous, so disable the button while waiting -->
-<form th:action="@{/chat}" method="post" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Scanning...';">
-    <input name="message" placeholder="Describe a change, e.g. Rename the product from Acme Portal to Kai Hub"
-           required autofocus autocomplete="off">
-    <button type="submit">Send</button>
-</form>
+    <div th:each="m : ${messages}" class="msg" th:classappend="${m.sender}">
+        <p th:unless="${m.report}" th:text="${m.text}"></p>
 
-<script>window.scrollTo(0, document.body.scrollHeight);</script>
+        <th:block th:if="${m.report}">
+            <p class="summary" th:text="${m.text}"></p>
+            <div class="report">
+                <!-- Files that need attention first: affected, manual, error -->
+                <table th:if="${m.report.affectedCount() + m.report.errorCount() > 0}">
+                    <tr><th>File</th><th>Result</th><th>Why</th></tr>
+                    <tr th:each="f : ${m.report.findings}" th:unless="${f.status.name() == 'NOT_AFFECTED'}"
+                        th:class="${f.manual()} ? 'AFFECTED MANUAL' : ${f.status.name()}">
+                        <td class="name"><span class="file" th:text="${f.file}"></span></td>
+                        <td class="result" th:text="${f.manual()} ? 'Update by hand' : (${f.affected()} ? 'Must change' : 'Could not check')"></td>
+                        <td class="why" th:text="${f.reason}"></td>
+                    </tr>
+                </table>
+                <details th:if="${m.report.findings.size() > m.report.affectedCount() + m.report.errorCount()}">
+                    <summary th:text="'No change needed (' + ${m.report.findings.size() - m.report.affectedCount() - m.report.errorCount()} + ')'"></summary>
+                    <table>
+                        <tr th:each="f : ${m.report.findings}" th:if="${f.status.name() == 'NOT_AFFECTED'}" class="NOT_AFFECTED">
+                            <td class="name"><span class="file" th:text="${f.file}"></span></td>
+                            <td class="result">No change</td>
+                            <td class="why" th:text="${f.reason}"></td>
+                        </tr>
+                    </table>
+                </details>
+            </div>
+        </th:block>
+    </div>
+</main>
+
+<footer>
+    <!-- Scans are synchronous (one model call per file), so disable the button while waiting -->
+    <form th:action="@{/chat}" method="post" id="ask">
+        <input name="message" placeholder="Describe a change to your documents"
+               aria-label="Change request" required autofocus autocomplete="off">
+        <button type="submit">Scan documents</button>
+    </form>
+</footer>
+
+<script>
+    const form = document.getElementById('ask');
+    form.addEventListener('submit', () => {
+        const b = form.querySelector('button');
+        b.disabled = true;
+        b.textContent = 'Scanning…';
+    });
+    // Example requests fill the box, so you can edit before scanning
+    document.querySelectorAll('.examples button').forEach(e => e.addEventListener('click', () => {
+        form.message.value = e.textContent;
+        form.message.focus();
+    }));
+    window.scrollTo(0, document.body.scrollHeight);
+</script>
 </body>
 </html>

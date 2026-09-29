@@ -47,7 +47,9 @@ public class ChatController {
 		try {
 			Finding.Report report = orchestrator.scan(message);
 			String summary = report.affectedCount() + " of " + report.findings().size() + " files affected in "
-					+ report.repository() + ":" + report.location();
+					+ report.repository() + ":" + report.location()
+						+ (report.manualCount() > 0 ? ". " + report.manualCount() + " need a manual update (docx/pptx/pdf)" : "")
+					+ (report.errorCount() > 0 ? " (" + report.errorCount() + " could not be checked, see Error rows)" : "");
 			history.add(new Message("bot", summary, report));
 		}
 		catch (Exception e) {

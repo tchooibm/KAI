@@ -67,7 +67,12 @@
 <!--			<artifactId>spring-ai-starter-model-ollama</artifactId>-->
 		</dependency>
 
-
+		<!-- Reads text out of docx / pptx / pdf so the scanner can check them (read-only) -->
+		<dependency>
+			<groupId>org.apache.tika</groupId>
+			<artifactId>tika-parsers-standard-package</artifactId>
+			<version>4.0.0</version>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -75,6 +80,27 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<!-- Fail the build unless it runs on JDK 25 (version managed by the Spring Boot parent) -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>require-jdk-25</id>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireJavaVersion>
+									<version>[25,26)</version>
+									<message>Kai must be built with JDK 25. Set JAVA_HOME, or in IntelliJ: Settings > Build Tools > Maven > Runner > JRE.</message>
+								</requireJavaVersion>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

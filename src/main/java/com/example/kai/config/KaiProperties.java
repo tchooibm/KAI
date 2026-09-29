@@ -9,11 +9,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record KaiProperties(String backupDir, Scan scan) {
 
 	// kai.scan.repository / kai.scan.location: what every change request is checked against
-	public record Scan(String repository, String location) {
+	// kai.scan.parallel: how many files are checked at the same time (model calls in flight)
+	public record Scan(String repository, String location, Integer parallel) {
 
 		public Scan {
 			repository = isBlank(repository) ? "local" : repository.trim();
 			location = isBlank(location) ? "." : location.trim();
+			parallel = parallel == null ? 4 : parallel;
+			if (parallel < 1) {
+				throw new IllegalStateException("kai.scan.parallel must be 1 or more, was " + parallel);
+			}
 		}
 	}
 
@@ -23,7 +28,7 @@ public record KaiProperties(String backupDir, Scan scan) {
 			throw new IllegalStateException("kai.backup-dir is required in the config file");
 		}
 		if (scan == null) {
-			scan = new Scan(null, null);
+			scan = new Scan(null, null, null);
 		}
 	}
 

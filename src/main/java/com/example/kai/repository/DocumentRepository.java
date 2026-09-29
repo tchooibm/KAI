@@ -13,7 +13,10 @@ public interface DocumentRepository {
 
 	List<String> list(String location) throws IOException;
 
-	String read(String location, String id) throws IOException;
+	String read(String location, String id) throws IOException; // plain text, also for docx/pptx/pdf
+
+	// false = Kai can read it but not rewrite it (e.g. docx/pptx/pdf): the user updates it by hand
+	boolean canWrite(String id);
 
 	void write(String location, String id, String content) throws IOException; // used from stage 4
 }

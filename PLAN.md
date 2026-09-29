@@ -59,8 +59,39 @@ src/main/java/com/example/kai/
 └── config/        KaiProperties: binds kai.* from kai.properties
 src/main/resources/templates/chat.html
 kai.properties     user-editable config, passed with --config
-demo-docs/         sample files for the demo
+sampleDocs/        10 cloud-onboarding test documents (git-ignored)
 ```
+
+## Sample documents (`sampleDocs/`)
+
+The scanner reads every format. Only text files (md, txt, yml, …) can be rewritten by Kai;
+docx, pptx and pdf are read with Apache Tika and marked **Update by hand** when affected.
+
+| File | Topic | Acme Portal | Java 17 | Port 8080 | support@ |
+|---|---|:-:|:-:|:-:|:-:|
+| README.md | Onboarding overview | ✓ | ✓ | | ✓ |
+| landing-zone-setup.md | Accounts, OUs, regions | ✓ | | | |
+| app-onboarding-runbook.md | Container deploy steps | | ✓ `temurin:17` | ✓ | |
+| tagging-and-cost-policy.md | Tags and budgets | | | | |
+| iam-access-onboarding.docx | SSO roles, access requests | ✓ | | | ✓ |
+| network-vpc-guide.docx | Subnets, security groups | | | ✓ | |
+| security-baseline.pdf | Patching, encryption | | ✓ `JDK 17` | | |
+| dr-backup-policy.pdf | RPO/RTO tiers | | | | |
+| onboarding-checklist.pptx | 5-step checklist deck | ✓ | ✓ | ✓ | |
+| cloud-101-training.pptx | New-joiner training | | (says "Java" only) | | |
+
+Expected scan results (LLM may vary slightly):
+
+| Change request | Affected | Of which by hand |
+|---|---|---|
+| Rename the product from Acme Portal to Kai Hub | 4 | 2 (docx, pptx) |
+| We now require Java 21 instead of 17 | 4 | 2 (pdf, pptx) |
+| Change the application port from 8080 to 9090 | 3 | 2 (docx, pptx) |
+| Support email is now help@kaihub.example | 2 | 1 (docx) |
+
+`tagging-and-cost-policy.md`, `dr-backup-policy.pdf` and `cloud-101-training.pptx` are true
+negatives. The training deck mentions Java as a supported language, so it checks that the
+scanner doesn't flag a file just for naming a related topic.
 
 ## Configuration
 
@@ -78,6 +109,7 @@ scan target, backup) and overrides the built-in `application.properties`.
 |---|---|---|
 | `kai.scan.repository` | `local` | Which adapter to scan with. Unknown value → startup fails |
 | `kai.scan.location` | `.` | What to scan (local: folder path) |
+| `kai.scan.parallel` | `4` | Files checked at the same time. Lower it on 429 rate-limit errors. Below 1 → startup fails |
 | `kai.backup-dir` | **required** | Where originals are backed up before writing |
 | `spring.ai.openai.*`, `server.port`, … | from application.properties | Any Spring Boot / Spring AI key |
 
@@ -88,8 +120,8 @@ Later settings (e.g. SharePoint credentials) go in the same file under `kai.*`.
 
 | # | Stage | LLM? | Done when |
 |---|-------|------|-----------|
-| 1 | Skeleton: `demo-docs/`, `DocumentRepository` + `LocalFileRepository`, orchestrator, **stub** scanner, report table | No | Typing a change request in the chat at `/` returns a table of every file with affected yes/no from a keyword stub ✅ built |
-| 2 | ScannerAgent: real LLM, structured output (affected + reason) | Yes | Java-17 request flags `config.yml` (`temurin:17`) and skips CHANGELOG/FAQ |
+| 1 | Skeleton: sample docs, `DocumentRepository` + `LocalFileRepository`, orchestrator, **stub** scanner, report table | No | Typing a change request in the chat at `/` returns a table of every file with affected yes/no from a keyword stub ✅ built |
+| 2 | ScannerAgent: real LLM, structured output `Verdict(affected, reason)`; per-file Error status | Yes | On `sampleDocs/`, the four requests above give the expected counts; docx/pptx/pdf are read (Tika) and shown as "Update by hand"; bad model → "Could not check" rows, never "No change" ✅ built |
 | 3 | EditorAgent + ReviewerAgent → **review in the chat**: the bot reply shows, per file: original (read-only), proposed (editable textarea), include checkbox, reviewer note. "Save edits" button | Yes | You can change a proposal, save, reload, and still see your edit. Nothing is written to disk |
 | 4 | **Finalize**: write final HTML report (before/after for each selected file) → back up originals → write → if any write fails, restore every file from the backup | No | Happy path: files changed and report saved. Forced failure: every file identical to before, and the chat says "Rolled back" |
 | 5 | Demo polish: "simulate failure" checkbox (fails on the last file) to show rollback live, agent log panel, clearer errors | No | 2-minute demo runs cleanly |
@@ -100,8 +132,8 @@ Finalize refuses to overwrite it, so your review can't silently clobber newer co
 ## Demo script (draft)
 
 1. *"Rename the product from Acme Portal to Kai Hub"*: easy, keyword-level.
-2. *"We now require Java 21 instead of 17"*: the LLM catches `JDK 17`,
-   `temurin:17` and `java.version=17`, which grep would miss.
+2. *"We now require Java 21 instead of 17"*: the LLM catches `Java 17`, `JDK 17`
+   (in a PDF) and `temurin:17`, but skips the training deck that only says "Java".
 3. In review, hand-edit one proposal (e.g. change "Temurin" to "any JDK 21"), untick one file.
 4. Finalize → open the report → show files changed.
 5. Run again with "simulate failure" → show the chat says "Rolled back" and the files are unchanged.

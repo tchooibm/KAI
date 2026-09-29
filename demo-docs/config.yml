@@ -1,5 +1,0 @@
-build:
-  image: eclipse-temurin:17-jre
-  timeout: 10m
-features:
-  dark-mode: true
