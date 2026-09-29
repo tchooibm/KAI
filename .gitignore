@@ -36,3 +36,6 @@ build/
 .DS_Store
 .env
 *.log
+
+### Kai Impact ###
+kai-backups/

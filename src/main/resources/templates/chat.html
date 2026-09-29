@@ -2,25 +2,44 @@
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
-    <title>Kai Chat</title>
+    <title>Kai</title>
     <style>
-        body { font-family: sans-serif; max-width: 700px; margin: 40px auto; }
+        body { font-family: sans-serif; max-width: 900px; margin: 40px auto; }
+        .meta { color: #6b7280; font-size: 0.9em; }
         .msg { padding: 8px 12px; margin: 6px 0; border-radius: 8px; white-space: pre-wrap; }
         .user { background: #dbeafe; margin-left: 20%; }
-        .bot { background: #f3f4f6; margin-right: 20%; }
+        .bot { background: #f3f4f6; margin-right: 10%; }
         .error { background: #fee2e2; color: #991b1b; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; white-space: normal; background: white; }
+        th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; }
+        tr.yes { background: #fef3c7; }
         form { display: flex; gap: 8px; margin-top: 16px; }
         input { flex: 1; padding: 8px; }
     </style>
 </head>
 <body>
-<h1>Kai Chat</h1>
+<h1>Kai</h1>
+<p class="meta">
+    Scanning <code th:text="${target.repository + ':' + target.location}"></code>
+    &middot; Backups <code th:text="${backupDir}"></code>
+</p>
 
-<div th:each="m : ${messages}" class="msg" th:classappend="${m.sender}" th:text="${m.text}"></div>
+<div th:each="m : ${messages}" class="msg" th:classappend="${m.sender}">
+    <div th:text="${m.text}"></div>
+    <table th:if="${m.report}">
+        <tr><th>File</th><th>Affected</th><th>Reason</th></tr>
+        <tr th:each="f : ${m.report.findings}" th:classappend="${f.affected} ? 'yes'">
+            <td th:text="${f.file}"></td>
+            <td th:text="${f.affected} ? 'Yes' : 'No'"></td>
+            <td th:text="${f.reason}"></td>
+        </tr>
+    </table>
+</div>
 
-<!-- The model call is synchronous, so disable the button while waiting for the reply -->
-<form th:action="@{/chat}" method="post" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Thinking...';">
-    <input name="message" placeholder="Type a message..." required autofocus autocomplete="off">
+<!-- Scans are synchronous, so disable the button while waiting -->
+<form th:action="@{/chat}" method="post" onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Scanning...';">
+    <input name="message" placeholder="Describe a change, e.g. Rename the product from Acme Portal to Kai Hub"
+           required autofocus autocomplete="off">
     <button type="submit">Send</button>
 </form>
 
