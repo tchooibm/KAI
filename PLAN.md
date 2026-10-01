@@ -120,9 +120,35 @@ Build: `./mvnw package` → `target/kai-0.0.1-SNAPSHOT.jar`.
 |---|-------|------|-----------|
 | 1 | Skeleton: sample docs, `DocumentRepository` + `LocalFileRepository`, orchestrator, **stub** scanner, report table | No | Typing a change request in the chat at `/` returns a table of every file with affected yes/no from a keyword stub ✅ built |
 | 2 | ScannerAgent: real LLM, structured output `Verdict(affected, reason)`; per-file Error status | Yes | On `sampleDocs/`, the four requests above give the expected counts; docx/pptx/pdf are read (Tika) and shown as "Update by hand"; bad model → "Could not check" rows, never "No change" ✅ built |
-| 3 | EditorAgent + ReviewerAgent → **review in the chat**: the bot reply shows, per file: original (read-only), proposed (editable textarea), include checkbox, reviewer note. "Save edits" button | Yes | You can change a proposal, save, reload, and still see your edit. Nothing is written to disk |
+| 3 | EditorAgent + ReviewerAgent → **review in the chat**: the bot reply shows, per file: a **diff** of original vs proposed, an Edit toggle (editable textarea of the proposed text), include checkbox, reviewer note. "Save edits" button | Yes | You can change a proposal, save, reload, and still see your edit (diff updated). Editor + Reviewer run in parallel. Nothing is written to disk |
 | 4 | **Finalize**: write final HTML report (before/after for each selected file) → back up originals → write → if any write fails, restore every file from the backup | No | Happy path: files changed and report saved. Forced failure: every file identical to before, and the chat says "Rolled back" |
 | 5 | Demo polish: "simulate failure" checkbox (fails on the last file) to show rollback live, agent log panel, clearer errors | No | 2-minute demo runs cleanly |
+
+Stage 3 requirements (agreed, not started):
+
+- **Parallel:** Editor + Reviewer run per file in parallel, in the same `kai.scan.parallel`
+  pool as the scan (Reviewer runs after the Editor for the same file). A failure on one file
+  shows as an error on that file only and never blocks the others.
+- **Diff, not two boxes:** each file shows a line diff of original → proposed (removed lines
+  red, added lines green). "Edit" opens the proposed text in a textarea; after "Save edits"
+  the diff is recalculated from your edited text.
+- Only editable (text) files get a proposal; affected docx/pptx/pdf stay "Update by hand".
+- **Passage edits, any size:** the Editor returns a list of `(original passage → new passage)`
+  edits, not the whole file. A passage can be a sentence, a paragraph or a whole section, and
+  the new passage can be fully rewritten, longer, or add new paragraphs (anchored to a
+  neighbouring passage). Changes are not limited to word swaps: e.g. a feature release that
+  changes how other features work → the affected sections are rewritten properly. Everything
+  not in an edit stays byte-for-byte identical, so the diff shows only real changes. If the
+  whole document needs rewriting, that is one edit whose passage is the entire file.
+- **Applying edits:** Kai applies an edit only if its original passage appears **exactly once**
+  in the file. If any edit can't be placed, Kai retries the Editor **once automatically**,
+  telling it which passages didn't match. Still failing → that file shows "Could not apply"
+  (no guessing); other files are unaffected.
+- **Reviewer** checks the edited result against the change request: does it do what was
+  asked, nothing unrelated, and was anything affected missed?
+- **Multi-line request box:** the chat input becomes a textarea, so users can paste release
+  notes or a feature description several paragraphs long. Enter only adds a new line (never
+  sends); the only way to send is clicking **Scan documents**. No keyboard shortcut.
 
 Stage 4 also detects **stale files**: if a file changed on disk after the scan,
 Finalize refuses to overwrite it, so your review can't silently clobber newer content.
