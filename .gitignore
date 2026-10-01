@@ -40,3 +40,8 @@ build/
 ### Kai Impact ###
 kai-backups/
 sampleDocs/
+
+### Packaging ###
+packaging/dist/
+packaging/build/
+packaging/launcher/payload.tar.gz
