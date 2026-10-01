@@ -121,6 +121,17 @@
                 border-radius: 6px; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
         .save { display: flex; gap: 12px; align-items: center; margin-top: 10px; font-size: 13px; color: var(--muted); }
         .save button { padding: 8px 18px; }
+        .save button.secondary { background: var(--sheet); color: var(--teal); border: 1px solid var(--teal); }
+        .applied { margin: 10px 0 0; font-size: 13px; font-weight: 600; color: var(--teal); }
+        .bot > p { margin: 0; white-space: pre-wrap; }
+        .log { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px;
+               max-height: 50vh; overflow: auto; font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+        .log > div { white-space: pre-wrap; }
+        .log > div:last-child { color: var(--ink); }
+        .working .summary::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%;
+                                   background: var(--teal); animation: pulse 1s ease-in-out infinite alternate; }
+        @keyframes pulse { from { opacity: .2; } to { opacity: 1; } }
+        .open-report { display: inline-block; margin-top: 6px; font-size: 13px; color: var(--teal); font-weight: 500; }
 
         footer {
             position: fixed; left: 0; right: 0; bottom: 0; max-width: none;
@@ -178,6 +189,7 @@
     <div th:each="m, mi : ${messages}" class="msg" th:classappend="${m.sender}"
          th:id="${m.report != null} ? 'report-' + ${mi.index}">
         <p th:unless="${m.report}" th:text="${m.text}"></p>
+        <a th:if="${m.link}" th:href="@{${m.link}}" target="_blank" class="open-report">Open the report</a>
 
         <!-- One form per report: "Save edits" stores the ticks and edited texts in the session -->
         <form th:if="${m.report}" th:action="@{/save}" method="post">
@@ -245,31 +257,61 @@
                     </th:block>
                 </table>
             </div>
-            <div class="save" th:if="${m.report.readyCount() > 0}">
-                <button type="submit">Save edits</button>
-                <span>Saves your ticks and edits here. Nothing is written to your files yet.</span>
+            <div class="save" th:if="${m.report.readyCount() > 0 and !m.applied}">
+                <button type="submit" class="secondary">Save edits</button>
+                <button type="submit" class="finalize" th:formaction="@{/finalize}">Finalize</button>
+                <span>Save keeps your ticks and edits here. Finalize backs up the originals, then writes every ticked file.</span>
             </div>
+            <p class="applied" th:if="${m.applied}">Finalized: these changes have been written.</p>
         </form>
+    </div>
+
+    <!-- A scan is running: what the agents are doing, updated every second; the report replaces it when done -->
+    <div class="msg bot working" th:if="${log != null}">
+        <p class="summary">Kai is working on it. This can take a few minutes.</p>
+        <div id="log" class="log" th:data-url="@{/progress}"><div th:each="l : ${log}" th:text="${l}"></div></div>
     </div>
 </main>
 
 <footer>
-    <!-- Scans are synchronous (model calls per file), so disable the button while waiting.
+    <!-- One scan at a time: the button is off while one runs.
          Enter adds a new line; the only way to send is the button. -->
     <form th:action="@{/chat}" method="post" id="ask">
         <textarea name="message" rows="3" placeholder="Describe a change to your documents, or paste release notes"
                   aria-label="Change request" required autofocus></textarea>
-        <button type="submit">Scan documents</button>
+        <button type="submit" th:disabled="${log != null}" th:text="${log != null} ? 'Scanning…' : 'Scan documents'">Scan documents</button>
     </form>
 </footer>
 
 <script>
+    // Finalize writes files: ask once, then show progress
+    document.querySelectorAll('button.finalize').forEach(b => b.addEventListener('click', e => {
+        if (!confirm('Write every ticked file now? Kai backs up the originals first.')) {
+            e.preventDefault();
+            return;
+        }
+        setTimeout(() => { b.disabled = true; b.textContent = 'Writing…'; }); // after the form has submitted
+    }));
     const form = document.getElementById('ask');
     form.addEventListener('submit', () => {
         const b = form.querySelector('button');
         b.disabled = true;
-        b.textContent = 'Scanning and drafting edits…';
+        b.textContent = 'Starting…';
     });
+    // While a scan runs: fetch new log lines every second, reload when it's done to show the report
+    const log = document.getElementById('log');
+    if (log) {
+        const poll = () => fetch(log.dataset.url + '?since=' + log.children.length)
+            .then(r => r.json())
+            .then(p => {
+                p.lines.forEach(l => log.appendChild(document.createElement('div')).textContent = l);
+                if (p.lines.length) window.scrollTo(0, document.body.scrollHeight);
+                if (p.done) location.href = location.pathname; // drop any #report-N so the new report is in view
+                else setTimeout(poll, 1000);
+            })
+            .catch(() => setTimeout(poll, 3000)); // e.g. a network hiccup: keep trying
+        setTimeout(poll, 1000);
+    }
     // Example requests fill the box, so you can edit before scanning
     document.querySelectorAll('.examples button').forEach(e => e.addEventListener('click', () => {
         form.message.value = e.textContent;

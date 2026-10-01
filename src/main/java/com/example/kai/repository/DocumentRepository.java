@@ -18,5 +18,10 @@ public interface DocumentRepository {
 	// false = Kai can read it but not rewrite it (e.g. docx/pptx/pdf): the user updates it by hand
 	boolean canWrite(String id);
 
-	void write(String location, String id, String content) throws IOException; // used from stage 4
+	void write(String location, String id, String content) throws IOException;
+
+	// Exact bytes, for backup and rollback: a restore must give back the identical file
+	byte[] readBytes(String location, String id) throws IOException;
+
+	void writeBytes(String location, String id, byte[] content) throws IOException;
 }

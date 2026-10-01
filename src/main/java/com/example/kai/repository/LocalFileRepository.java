@@ -78,6 +78,19 @@ public class LocalFileRepository implements DocumentRepository {
 		Files.writeString(resolve(location, id), content);
 	}
 
+	@Override
+	public byte[] readBytes(String location, String id) throws IOException {
+		return Files.readAllBytes(resolve(location, id));
+	}
+
+	@Override
+	public void writeBytes(String location, String id, byte[] content) throws IOException {
+		if (!canWrite(id)) {
+			throw new IOException(id + " is read-only in Kai (update it by hand)");
+		}
+		Files.write(resolve(location, id), content);
+	}
+
 	private static boolean supported(Path p) {
 		String ext = extension(p);
 		long size = p.toFile().length();

@@ -71,6 +71,10 @@ For each file it shows:
 You can describe the change in a sentence, or paste release notes several paragraphs long.
 **Enter** starts a new line; click **Scan documents** to send.
 
+While Kai works, a live log shows what each agent is doing (scanner, editor, reviewer, per
+file). The report appears by itself when the scan is done. You can refresh the page meanwhile;
+the log picks up where it was. One scan runs at a time.
+
 Under each **Must change** file you see:
 
 - What changes: removed lines in red (−), new lines in green (+). Unchanged parts are folded.
@@ -80,6 +84,17 @@ Under each **Must change** file you see:
 - **Include this file**: untick it to leave the file as it is.
 
 Saving edits does **not** change your files yet.
+
+When you are happy, click **Finalize** and confirm. Kai then:
+
+1. Checks that no file changed since the scan. If one did, Kai writes nothing and asks you to
+   scan again, so it never overwrites someone else's newer work.
+2. Saves a report of every change (before and after) and backs up the original files, both in
+   the `kai-backups` folder.
+3. Writes the ticked files. If writing any file fails, Kai puts **all** of them back from the
+   backup and says **Rolled back**: your files are exactly as before.
+
+The chat reply has an **Open the report** link.
 
 ## If something goes wrong
 
@@ -92,6 +107,7 @@ Kai again.
 | *Kai could not find its settings file* | Put `kai.properties` in the same folder as `kai.jar`, and start Kai from that folder. Check the name: it must be exactly `kai.properties` (Windows sometimes hides the ending and saves it as `kai.properties.txt`) |
 | *Folder to scan not found* | Check the path after `kai.scan.local`. On Windows use `/`, not `\` |
 | *kai.backup-dir is missing* | Add the line `kai.backup-dir=./kai-backups` |
+| *The backup folder is inside a folder Kai scans* | Choose a backup folder outside your document folders, e.g. `kai.backup-dir=~/kai-backups` |
 | *Nothing to scan* | Add a `kai.scan.local=...` line with at least one folder |
 | *Box folders are not supported yet* | Put a `#` in front of the `kai.scan.box` line |
 | *Unknown setting* | A setting name is misspelled. Compare it with the list in the message |
@@ -153,7 +169,7 @@ Relative paths in the file are resolved against the file's own folder. The check
 |---|---|---|
 | `kai.scan.local` | | Comma-separated folders; each must exist. Needed unless another target is set |
 | `kai.scan.box` | | Placeholder for the Box adapter; setting it is an error for now |
-| `kai.backup-dir` | **required** | Created if missing |
+| `kai.backup-dir` | **required** | Created if missing; must not be inside a scanned folder |
 | `kai.scan.parallel` | `4` | Whole number, 1 or more |
 | any other `kai.*` | | Error: "Unknown setting" (catches typos) |
 

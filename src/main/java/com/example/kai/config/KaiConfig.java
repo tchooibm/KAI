@@ -99,6 +99,13 @@ public final class KaiConfig {
 				problems.add("Folder to scan not found: " + dir);
 			}
 		}
+		// Else backups would be scanned (and edited) as if they were documents
+		for (Target t : targets) {
+			if (backupDir != null && backupDir.startsWith(Path.of(t.location()))) {
+				problems.add("The backup folder " + backupDir + " is inside a folder Kai scans (" + t.entry()
+						+ "). Choose a backup folder outside it, e.g.  kai.backup-dir=~/kai-backups");
+			}
+		}
 		if (!box.isEmpty()) {
 			// Placeholder: the Box adapter is not built yet
 			problems.add("kai.scan.box: Box folders are not supported yet. Put a # in front of that line.");

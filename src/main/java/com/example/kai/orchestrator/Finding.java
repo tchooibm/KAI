@@ -19,6 +19,11 @@ public record Finding(Target target, String file, Status status, String reason, 
 		return status == Status.AFFECTED;
 	}
 
+	// Will be written on Finalize: a ready proposal, ticked, that differs from the original
+	public boolean selected() {
+		return proposal != null && proposal.ready() && proposal.include() && !proposal.proposed().equals(proposal.original());
+	}
+
 	// Affected, but Kai can't rewrite it: the user has to update it by hand
 	public boolean manual() {
 		return affected() && !editable;

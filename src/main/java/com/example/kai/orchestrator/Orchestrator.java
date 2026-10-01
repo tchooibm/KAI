@@ -20,10 +20,12 @@ import com.example.kai.agent.scanner.ScannerAgent;
 import com.example.kai.config.KaiProperties;
 import com.example.kai.config.KaiProperties.Target;
 import com.example.kai.repository.DocumentRepository;
+import com.example.kai.writer.ChangeWriter;
 
 // The only thing the chat talks to. Plain Java: decides which agent runs when
 // and passes results between them. Agents never talk to the user directly.
-// Per file: ScannerAgent -> (affected + editable) EditorAgent -> ReviewerAgent. Later: ChangeWriter.
+// Per file: ScannerAgent -> (affected + editable) EditorAgent -> ReviewerAgent.
+// Finalize: ChangeWriter (no LLM) writes the ticked proposals.
 @Service
 public class Orchestrator {
 
@@ -33,15 +35,17 @@ public class Orchestrator {
 	private final ScannerAgent scanner;
 	private final EditorAgent editor;
 	private final ReviewerAgent reviewer;
+	private final ChangeWriter writer;
 	private final KaiProperties properties;
 
 	// Spring injects every DocumentRepository bean, so new adapters register themselves
 	public Orchestrator(List<DocumentRepository> repositories, ScannerAgent scanner, EditorAgent editor,
-			ReviewerAgent reviewer, KaiProperties properties) {
+			ReviewerAgent reviewer, ChangeWriter writer, KaiProperties properties) {
 		repositories.forEach(r -> this.repositories.put(r.type(), r));
 		this.scanner = scanner;
 		this.editor = editor;
 		this.reviewer = reviewer;
+		this.writer = writer;
 		this.properties = properties;
 		properties.targets().forEach(t -> repository(t.type())); // no adapter for a target -> fail at startup
 	}
@@ -53,66 +57,88 @@ public class Orchestrator {
 
 	// Handles up to kai.scan.parallel files at the same time, across all targets. Each file runs
 	// scan -> edit -> review in one task, so edits for one file overlap with scans of others.
-	// The report keeps the target and file-list order
-	public Finding.Report scan(String instruction) throws IOException {
+	// The report keeps the target and file-list order. Each step is added to progress for the chat page.
+	public Finding.Report scan(String instruction, Progress progress) throws IOException {
 		List<Future<Finding>> futures = new ArrayList<>();
 		try (ExecutorService pool = Executors.newFixedThreadPool(properties.parallel())) { // close() waits for all
 			for (Target target : properties.targets()) {
 				DocumentRepository repo = repository(target.type());
-				for (String id : repo.list(target.location())) {
-					futures.add(pool.submit(() -> check(target, repo, instruction, id)));
+				List<String> ids = repo.list(target.location());
+				progress.add("Found " + ids.size() + " files in " + target.entry());
+				for (String id : ids) {
+					futures.add(pool.submit(() -> check(target, repo, instruction, id, progress)));
 				}
 			}
+			progress.add("Checking " + futures.size() + " files, up to " + properties.parallel() + " at a time");
 		}
 		List<Finding> findings = futures.stream().map(Future::resultNow).toList();
-		return new Finding.Report(instruction, properties.targets(), findings);
+		Finding.Report report = new Finding.Report(instruction, properties.targets(), findings);
+		progress.add("Done: " + report.affectedCount() + " of " + findings.size() + " files affected");
+		return report;
+	}
+
+	// Finalize: report -> backup -> write the ticked files -> restore all on any failure
+	public ChangeWriter.Outcome apply(Finding.Report report) {
+		return writer.apply(report, this::repository);
 	}
 
 	// Never throws: one bad file or model call must not stop the scan, and must not look like "not affected"
-	private Finding check(Target target, DocumentRepository repo, String instruction, String id) {
+	private Finding check(Target target, DocumentRepository repo, String instruction, String id, Progress progress) {
 		boolean editable = repo.canWrite(id);
+		String name = target.entry() + "/" + id;
 		try {
 			String content = repo.read(target.location(), id);
+			progress.add("Scanner: checking " + name);
 			ScannerAgent.Verdict v = scanner.assess(instruction, id, content);
 			if (!v.affected()) {
+				progress.add("Scanner: " + name + " needs no change");
 				return new Finding(target, id, Finding.Status.NOT_AFFECTED, v.reason(), editable, null);
 			}
-			Proposal proposal = editable ? propose(instruction, id, content) : null;
+			progress.add("Scanner: " + name + " must change" + (editable ? "" : " (update by hand)"));
+			Proposal proposal = editable ? propose(instruction, id, name, content, progress) : null;
 			return new Finding(target, id, Finding.Status.AFFECTED, v.reason(), editable, proposal);
 		}
 		catch (Exception e) {
 			log.warn("SCANNER {} {} -> ERROR", target.label(), id, e);
+			progress.add("Scanner: could not check " + name + ": " + message(e));
 			return new Finding(target, id, Finding.Status.ERROR, message(e), editable, null);
 		}
 	}
 
 	// Editor -> apply (one automatic retry if a passage doesn't match) -> Reviewer. Never throws.
-	private Proposal propose(String instruction, String id, String content) {
+	private Proposal propose(String instruction, String id, String name, String content, Progress progress) {
 		String proposed;
 		try {
+			progress.add("Editor: drafting edits for " + name);
 			try {
 				proposed = Patch.apply(content, editor.propose(instruction, id, content, null));
 			}
 			catch (Patch.NoMatch first) {
 				log.info("EDITOR {} -> retry:\n{}", id, first.getMessage());
+				progress.add("Editor: an edit did not match " + name + ", retrying once");
 				proposed = Patch.apply(content, editor.propose(instruction, id, content, first.getMessage()));
 			}
 		}
 		catch (Patch.NoMatch e) {
 			log.warn("EDITOR {} -> could not apply:\n{}", id, e.getMessage());
+			progress.add("Editor: could not apply edits to " + name);
 			return Proposal.failed(content, "Kai's edits did not match the file text, so nothing was proposed.\n" + e.getMessage());
 		}
 		catch (Exception e) {
 			log.warn("EDITOR {} -> ERROR", id, e);
+			progress.add("Editor: failed on " + name + ": " + message(e));
 			return Proposal.failed(content, "The editor failed: " + message(e));
 		}
 		// A reviewer failure keeps the proposal: the note says it wasn't checked
 		try {
+			progress.add("Reviewer: checking the edits for " + name);
 			ReviewerAgent.Review r = reviewer.review(instruction, id, content, proposed);
+			progress.add("Reviewer: " + name + (r.ok() ? " looks right" : " please check"));
 			return Proposal.ready(content, proposed, r.ok(), r.note());
 		}
 		catch (Exception e) {
 			log.warn("REVIEWER {} -> ERROR", id, e);
+			progress.add("Reviewer: could not check " + name + ": " + message(e));
 			return Proposal.ready(content, proposed, null, "The reviewer could not check this proposal: " + message(e));
 		}
 	}

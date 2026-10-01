@@ -56,7 +56,7 @@ src/main/java/com/example/kai/
 │   ├── editor/    EditorAgent: passage edits (original -> replacement)
 │   └── reviewer/  ReviewerAgent: ok + note on the edited result
 ├── repository/    DocumentRepository + all adapters (LocalFileRepository; later SharePoint, OneDrive)
-├── writer/        (stage 4) ChangeWriter: report, backup, write, rollback
+├── writer/        ChangeWriter: stale check, report, backup, write, rollback
 └── config/        KaiConfig: finds + checks kai.properties before Spring starts; KaiProperties: the result
 src/main/resources/templates/chat.html
 kai.properties     user settings; lives next to kai.jar (or project root in the IDE)
@@ -107,7 +107,7 @@ the file's folder. Full rules and run instructions: `README.md`.
 | `kai.scan.local` | | Folders to scan, comma-separated. Each must exist |
 | `kai.scan.box` | | Box **file** shared links, comma-separated (stage 2b). Folder links need an API token: not supported yet |
 | `kai.scan.parallel` | `4` | Files checked at the same time. Lower it on 429 rate-limit errors. Must be ≥ 1 |
-| `kai.backup-dir` | **required** | Where originals are backed up before writing. Created if missing |
+| `kai.backup-dir` | **required** | Where originals are backed up before writing. Created if missing. Must not be inside a scanned folder |
 | `spring.ai.openai.*`, `server.port`, … | from application.properties | Any Spring Boot / Spring AI key |
 
 Unknown `kai.*` keys are errors, so typos don't get silently ignored.
@@ -122,9 +122,9 @@ Build: `./mvnw package` → `target/kai-0.0.1-SNAPSHOT.jar`.
 | 2 | ScannerAgent: real LLM, structured output `Verdict(affected, reason)`; per-file Error status | Yes | On `sampleDocs/`, the four requests above give the expected counts; docx/pptx/pdf are read (Tika) and shown as "Update by hand"; bad model → "Could not check" rows, never "No change" ✅ built |
 | 2b | **Box (cloud) + local together**: `BoxRepository` reads Box files by public shared link, read-only | No (scan uses LLM as before) | Two sample docs moved from `sampleDocs/` to Box: the Java 21 request still finds 4 affected / 2 by hand, Box rows show their source and open in Box. Bad or folder link → plain startup message. ✅ Done instead through a Box Drive folder in `kai.scan.local` (see below) |
 | 3 | EditorAgent + ReviewerAgent → **review in the chat**: the bot reply shows, per file: a **diff** of original vs proposed, an Edit toggle (editable textarea of the proposed text), include checkbox, reviewer note. "Save edits" button | Yes | You can change a proposal, save, reload, and still see your edit (diff updated). Editor + Reviewer run in parallel. Nothing is written to disk ✅ built |
-| 4 | **Finalize**: write final HTML report (before/after for each selected file) → back up originals → write → if any write fails, restore every file from the backup | No | Happy path: files changed and report saved. Forced failure: every file identical to before, and the chat says "Rolled back" |
+| 4 | **Finalize**: write final HTML report (before/after for each selected file) → back up originals → write → if any write fails, restore every file from the backup | No | Happy path: files changed and report saved. Forced failure: every file identical to before, and the chat says "Rolled back" ✅ built (forced-failure test deferred, see below) |
 | 4b | **docx/pptx write-back** (after stage 4, decided 2026-10-01): Apache POI, edits only inside one paragraph; anything else stays "Could not apply" / "Update by hand". PDF stays by hand | No (edits come from the Editor as now) | Sample docx/pptx edited, open in Word/PowerPoint without a repair prompt, rollback restores them byte-for-byte |
-| 5 | Demo polish: "simulate failure" checkbox (fails on the last file) to show rollback live, agent log panel, clearer errors | No | 2-minute demo runs cleanly |
+| 5 | Demo polish: "simulate failure" checkbox (fails on the last file) to show rollback live, agent log panel (✅ built early: live progress log), clearer errors | No | 2-minute demo runs cleanly |
 
 Stage 2b outcome (2026-10-01): **done through Box Drive, no Box code.** The hackathon has no
 access to Box or SharePoint through developer tokens or APIs: no developer account, and public
@@ -195,6 +195,28 @@ How stage 3 is built:
   followed by one folded "No change needed" row per location.
 - `POST /save` takes `report=<message index>`, `text<i>` and `include<i>` (i = finding index).
   Textarea `\r\n` is turned back into `\n` unless the file uses `\r\n`.
+
+How stage 4 is built (2026-10-01):
+
+- **Finalize** button next to Save edits (same form, `formaction=/finalize`), so unsaved edits
+  count. Browser confirm first. `ChatController` → `Orchestrator.apply` → `ChangeWriter.apply`.
+- Selected = ready proposal, ticked, and different from the original (`Finding.selected()`).
+- Order: stale check (current file text must equal the scanned original, else refuse ALL,
+  nothing written) → `report.html` (status "Not written yet") → byte backups via
+  `DocumentRepository.readBytes` to `<backup-dir>/<run>/files/<n>-<folder>/<file>` → write →
+  on the first failure, restore every selected file with `writeBytes`. The report is saved
+  again with the outcome. Run id = `yyyyMMdd-HHmmss`.
+- The chat reply links to `GET /report/<run>`, which serves the saved report (browsers block
+  `file://` links from a web page). An applied report hides its buttons; after a rollback
+  you can Finalize again.
+- `KaiConfig` rejects a backup folder inside a scanned folder, else backups would be scanned.
+- Forced-failure test: deferred to stage 5's "simulate failure" checkbox (user, 2026-10-01).
+
+Live progress log (added after stage 4, 2026-10-01): `POST /chat` starts the scan on a virtual
+thread and returns at once; the session holds a `Job(Progress, CompletableFuture<Report>)`.
+The Orchestrator adds one line per agent step to `Progress`. The page polls
+`GET /progress?since=n` every second and reloads when done; `GET /` turns a finished job into
+the bot message (only request threads touch the history). One scan at a time per session.
 
 Stage 4b notes (not started; text files only until then): read docx/pptx with POI per paragraph
 (not Tika) so passages match what is written back; replace only the text pieces (runs) inside
