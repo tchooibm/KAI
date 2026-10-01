@@ -26,7 +26,7 @@ public class KaiApplication {
 		app.addInitializers(ctx -> ctx.getBeanFactory().registerSingleton("kaiProperties", config.properties()));
 		ConfigurableApplicationContext ctx;
 		try {
-			ctx = app.run(KaiConfig.springArgs(args, config.file()));
+			ctx = app.run(KaiConfig.springArgs(args, config.springFile()));
 		}
 		catch (Exception e) { // e.g. port already in use; Spring has already logged the details
 			KaiConfig.exit("Kai could not start. The reason is shown above.");

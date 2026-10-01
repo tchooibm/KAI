@@ -31,9 +31,12 @@ kai.backup-dir=./kai-backups
 
 - `kai.scan.local` is the folder with your documents. `./` means "the folder Kai is in".
   To check several folders, separate them with commas:
-  `kai.scan.local=~/Documents/Runbooks, C:/Team/Docs`
+  `kai.scan.local=~/Documents/Runbooks, C:\Team\Docs`
 - `kai.backup-dir` is where Kai keeps copies of your original files. Kai creates it for you.
-- On Windows, write `/` instead of `\` in folder paths: `C:/Team/Docs`, not `C:\Team\Docs`.
+- On Windows, paste folder paths as they are, for example from right-click → **Copy as path**.
+  `C:\Team\Docs` and `"C:\Team\Docs"` both work.
+- Box Drive folders work like any other folder. On a Mac, right-click the folder in Finder, hold
+  **Option** and choose **Copy as Pathname**.
 - Lines that start with `#` are notes. Kai ignores them.
 
 Save the file. Your Kai admin may also give you values for the **AI model** section.

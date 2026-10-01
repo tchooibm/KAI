@@ -105,7 +105,7 @@ the file's folder. Full rules and run instructions: `README.md`.
 | Key | Default | Purpose |
 |---|---|---|
 | `kai.scan.local` | | Folders to scan, comma-separated. Each must exist |
-| `kai.scan.box` | | Box folder URL. Placeholder: rejected until the Box adapter exists |
+| `kai.scan.box` | | Box **file** shared links, comma-separated (stage 2b). Folder links need an API token: not supported yet |
 | `kai.scan.parallel` | `4` | Files checked at the same time. Lower it on 429 rate-limit errors. Must be ≥ 1 |
 | `kai.backup-dir` | **required** | Where originals are backed up before writing. Created if missing |
 | `spring.ai.openai.*`, `server.port`, … | from application.properties | Any Spring Boot / Spring AI key |
@@ -120,9 +120,39 @@ Build: `./mvnw package` → `target/kai-0.0.1-SNAPSHOT.jar`.
 |---|-------|------|-----------|
 | 1 | Skeleton: sample docs, `DocumentRepository` + `LocalFileRepository`, orchestrator, **stub** scanner, report table | No | Typing a change request in the chat at `/` returns a table of every file with affected yes/no from a keyword stub ✅ built |
 | 2 | ScannerAgent: real LLM, structured output `Verdict(affected, reason)`; per-file Error status | Yes | On `sampleDocs/`, the four requests above give the expected counts; docx/pptx/pdf are read (Tika) and shown as "Update by hand"; bad model → "Could not check" rows, never "No change" ✅ built |
+| 2b | **Box (cloud) + local together**: `BoxRepository` reads Box files by public shared link, read-only | No (scan uses LLM as before) | Two sample docs moved from `sampleDocs/` to Box: the Java 21 request still finds 4 affected / 2 by hand, Box rows show their source and open in Box. Bad or folder link → plain startup message. ✅ Done instead through a Box Drive folder in `kai.scan.local` (see below) |
 | 3 | EditorAgent + ReviewerAgent → **review in the chat**: the bot reply shows, per file: a **diff** of original vs proposed, an Edit toggle (editable textarea of the proposed text), include checkbox, reviewer note. "Save edits" button | Yes | You can change a proposal, save, reload, and still see your edit (diff updated). Editor + Reviewer run in parallel. Nothing is written to disk |
 | 4 | **Finalize**: write final HTML report (before/after for each selected file) → back up originals → write → if any write fails, restore every file from the backup | No | Happy path: files changed and report saved. Forced failure: every file identical to before, and the chat says "Rolled back" |
 | 5 | Demo polish: "simulate failure" checkbox (fails on the last file) to show rollback live, agent log panel, clearer errors | No | 2-minute demo runs cleanly |
+
+Stage 2b outcome (2026-10-01): **done through Box Drive, no Box code.** The hackathon has no
+access to Box or SharePoint through developer tokens or APIs: no developer account, and public
+links need a login. Box Drive shows Box as a local folder, so it goes in `kai.scan.local` like
+any other folder, e.g. `/Users/<you>/Library/CloudStorage/Box-Box/kaitest`. Kai reads it
+locally. Only files that Box Drive shows in the folder (`ls`) are scanned. `kai.scan.box` stays
+a placeholder that is rejected at startup. The plan below is parked.
+
+Parked plan (shared links, needs links that download without login):
+
+- **Spike first (5 min, on your machine):** confirm a public file link downloads without
+  login: `curl -L -o test.pdf https://app.box.com/shared/static/<id>` (same `<id>` as the
+  `https://app.box.com/s/<id>` link). If it doesn't, stop and get a developer token instead.
+- **Config:** `kai.scan.box=<link>, <link>` takes **file** shared links (`/s/<id>` or
+  `/shared/static/<id>`), comma-separated like `kai.scan.local`. Links must be shared with
+  "People with the link" and allow download.
+- **Startup check (KaiConfig):** each link must be https on a box.com host and actually
+  download; otherwise a plain message ("This Box link can't be downloaded: is it a folder, or
+  is download turned off?"). Folder links can't be listed without an API token, so they are
+  reported as "not supported yet — share the files one by one".
+- **`BoxRepository`** (`type()` = `box`): `list(link)` returns the file name (from the
+  download's `Content-Disposition`); `read()` downloads with `java.net.http.HttpClient` and
+  extracts text with Tika, same size limits as local; `canWrite()` = false.
+- **Read-only:** affected Box files show as "Update by hand", with the file name linking to the
+  Box page. Writing back to Box (and rollback through Box) is a later stage; it needs a token
+  with edit rights.
+- **Report:** local and Box files in one table; each row shows its source (`local` / `box`).
+- **Later, with a token:** folder links via the Box API (`/2.0/shared_items` + folder items),
+  then write-back. Same adapter, no changes elsewhere.
 
 Stage 3 requirements (agreed, not started):
 

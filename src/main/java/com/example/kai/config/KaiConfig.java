@@ -2,7 +2,7 @@ package com.example.kai.config;
 
 import java.io.Console;
 import java.io.IOException;
-import java.io.Reader;
+import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,9 +26,9 @@ public final class KaiConfig {
 	public static final String FILE = "kai.properties";
 
 	private static final Set<String> KEYS = Set.of("kai.backup-dir", "kai.scan.local", "kai.scan.box", "kai.scan.parallel");
-	private static final boolean WINDOWS = System.getProperty("os.name", "").toLowerCase().contains("win");
 
-	public record Loaded(Path file, KaiProperties properties) {
+	// springFile: the copy of kai.properties that Spring reads (see load)
+	public record Loaded(Path file, Path springFile, KaiProperties properties) {
 	}
 
 	public static class Invalid extends Exception {
@@ -47,9 +47,17 @@ public final class KaiConfig {
 			throw new Invalid("Kai could not find its settings file:\n  " + file + "\n\n"
 					+ "Pass --config=<path to kai.properties>, or run Kai from the folder that has it.");
 		}
+		// A \ is kept as typed, so Windows paths can be pasted as-is (C:\Team\Docs).
+		// Normal .properties files treat \ as an escape, so double every one before parsing.
+		// Spring gets the same doubled copy, else e.g. C:\\users would fail as a bad \\u escape.
+		Path springFile;
 		Properties p = new Properties();
-		try (Reader reader = Files.newBufferedReader(file)) {
-			p.load(reader);
+		try {
+			String text = Files.readString(file).replace("\\", "\\\\");
+			p.load(new StringReader(text));
+			springFile = Files.createTempFile("kai-", ".properties");
+			springFile.toFile().deleteOnExit();
+			Files.writeString(springFile, text);
 		}
 		catch (IOException | IllegalArgumentException e) {
 			throw new Invalid("Kai could not read its settings file:\n  " + file + "\n\n" + e.getMessage());
@@ -88,8 +96,7 @@ public final class KaiConfig {
 				targets.add(new Target("local", dir.toString()));
 			}
 			else {
-				problems.add("Folder to scan not found: " + dir
-						+ (WINDOWS ? "  (On Windows, write / instead of \\ in paths, e.g. C:/Team/Docs)" : ""));
+				problems.add("Folder to scan not found: " + dir);
 			}
 		}
 		if (!box.isEmpty()) {
@@ -117,7 +124,7 @@ public final class KaiConfig {
 		if (!problems.isEmpty()) {
 			throw new Invalid("Kai's settings file has a problem:\n  " + file + "\n\n  - " + String.join("\n  - ", problems));
 		}
-		return new Loaded(file, new KaiProperties(backupDir, List.copyOf(targets), parallel));
+		return new Loaded(file, springFile, new KaiProperties(backupDir, List.copyOf(targets), parallel));
 	}
 
 	// Program arguments for Spring: drop --config, and load the same file for the spring.* keys
@@ -152,7 +159,9 @@ public final class KaiConfig {
 	}
 
 	private static Path path(Path home, String value) {
-		String v = value.startsWith("~/") ? System.getProperty("user.home") + value.substring(1) : value;
+		// Windows "Copy as path" adds quotes: "C:\Team\Docs"
+		String v = value.length() > 1 && value.startsWith("\"") && value.endsWith("\"") ? value.substring(1, value.length() - 1).trim() : value;
+		v = v.startsWith("~/") ? System.getProperty("user.home") + v.substring(1) : v;
 		return home.resolve(v).toAbsolutePath().normalize();
 	}
 
