@@ -1,42 +1,18 @@
 package com.example.kai.config;
 
 import java.nio.file.Path;
+import java.util.List;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
+// Kai's own settings (kai.* keys). Built and checked by KaiConfig before Spring starts,
+// then registered as a bean. All paths are already absolute.
+public record KaiProperties(Path backupDir, List<Target> targets, int parallel) {
 
-// Bound from the user's config file (kai.* keys), see kai.properties
-@ConfigurationProperties("kai")
-public record KaiProperties(String backupDir, Scan scan) {
+	// One place to scan. type picks the DocumentRepository adapter (local; later box).
+	// location: local = absolute folder path, box = folder URL.
+	public record Target(String type, String location) {
 
-	// kai.scan.repository / kai.scan.location: what every change request is checked against
-	// kai.scan.parallel: how many files are checked at the same time (model calls in flight)
-	public record Scan(String repository, String location, Integer parallel) {
-
-		public Scan {
-			repository = isBlank(repository) ? "local" : repository.trim();
-			location = isBlank(location) ? "." : location.trim();
-			parallel = parallel == null ? 4 : parallel;
-			if (parallel < 1) {
-				throw new IllegalStateException("kai.scan.parallel must be 1 or more, was " + parallel);
-			}
+		public String label() {
+			return type + ":" + location;
 		}
-	}
-
-	// Fail at startup, not halfway through a write
-	public KaiProperties {
-		if (isBlank(backupDir)) {
-			throw new IllegalStateException("kai.backup-dir is required in the config file");
-		}
-		if (scan == null) {
-			scan = new Scan(null, null, null);
-		}
-	}
-
-	public Path backupPath() {
-		return Path.of(backupDir).toAbsolutePath().normalize();
-	}
-
-	private static boolean isBlank(String s) {
-		return s == null || s.isBlank();
 	}
 }

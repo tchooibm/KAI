@@ -68,10 +68,13 @@
 		</dependency>
 
 		<!-- Reads text out of docx / pptx / pdf so the scanner can check them (read-only) -->
+		<!-- Source: https://mvnrepository.com/artifact/org.apache.tika/tika-parsers-standard-package -->
 		<dependency>
 			<groupId>org.apache.tika</groupId>
 			<artifactId>tika-parsers-standard-package</artifactId>
 			<version>4.0.0</version>
+			<type>pom</type>
+			<scope>compile</scope>
 		</dependency>
 	</dependencies>
 

@@ -9,7 +9,7 @@ import java.util.List;
 //   id:       a document inside that location (local: relative path)
 public interface DocumentRepository {
 
-	String type(); // shown in the UI dropdown, e.g. "local"
+	String type(); // matches kai.scan.<type> in kai.properties, e.g. "local"
 
 	List<String> list(String location) throws IOException;
 

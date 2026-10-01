@@ -35,8 +35,8 @@ public class ChatController {
 	@GetMapping("/")
 	public String chat(HttpSession session, Model model) {
 		model.addAttribute("messages", history(session));
-		model.addAttribute("target", orchestrator.target());
-		model.addAttribute("backupDir", properties.backupPath().toString());
+		model.addAttribute("targets", orchestrator.targets());
+		model.addAttribute("backupDir", properties.backupDir().toString());
 		return "chat"; // -> templates/chat.html
 	}
 
@@ -46,9 +46,8 @@ public class ChatController {
 		history.add(new Message("user", message, null));
 		try {
 			Finding.Report report = orchestrator.scan(message);
-			String summary = report.affectedCount() + " of " + report.findings().size() + " files affected in "
-					+ report.repository() + ":" + report.location()
-						+ (report.manualCount() > 0 ? ". " + report.manualCount() + " need a manual update (docx/pptx/pdf)" : "")
+			String summary = report.affectedCount() + " of " + report.findings().size() + " files affected"
+					+ (report.manualCount() > 0 ? ". " + report.manualCount() + " need a manual update (docx/pptx/pdf)" : "")
 					+ (report.errorCount() > 0 ? " (" + report.errorCount() + " could not be checked, see Error rows)" : "");
 			history.add(new Message("bot", summary, report));
 		}

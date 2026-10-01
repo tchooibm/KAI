@@ -2,9 +2,12 @@ package com.example.kai.orchestrator;
 
 import java.util.List;
 
-// One document's result. Stage 3 will add proposed content + reviewer verdict.
+import com.example.kai.config.KaiProperties.Target;
+
+// One document's result. target = which kai.scan.* folder it came from.
+// Stage 3 will add proposed content + reviewer verdict.
 // editable = false for formats Kai reads but never rewrites (docx, pptx, pdf).
-public record Finding(String file, Status status, String reason, boolean editable) {
+public record Finding(Target target, String file, Status status, String reason, boolean editable) {
 
 	// ERROR = the agent could not decide (timeout, bad model, unreadable file).
 	// Never shown as "No", so a failure can't hide an affected file.
@@ -22,7 +25,7 @@ public record Finding(String file, Status status, String reason, boolean editabl
 	}
 
 	// The whole run, kept in the chat history
-	public record Report(String instruction, String repository, String location, List<Finding> findings) {
+	public record Report(String instruction, List<Target> targets, List<Finding> findings) {
 
 		public long affectedCount() {
 			return count(Status.AFFECTED);

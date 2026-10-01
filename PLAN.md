@@ -41,7 +41,8 @@ ChangeWriter ── report → backup → write → rollback-on-failure (no LLM)
 ```
 
 Adding a repository = one `@Component implements DocumentRepository` in `repository/`.
-Spring injects all of them into the Orchestrator; select one with `kai.scan.repository`.
+Spring injects all of them into the Orchestrator; each `kai.scan.<type>` key in kai.properties
+(e.g. `kai.scan.local`) is a target scanned by the adapter whose `type()` matches.
 
 ## Project structure
 
@@ -56,9 +57,10 @@ src/main/java/com/example/kai/
 │   └── reviewer/  (stage 3) ReviewerAgent
 ├── repository/    DocumentRepository + all adapters (LocalFileRepository; later SharePoint, OneDrive)
 ├── writer/        (stage 4) ChangeWriter: report, backup, write, rollback
-└── config/        KaiProperties: binds kai.* from kai.properties
+└── config/        KaiConfig: finds + checks kai.properties before Spring starts; KaiProperties: the result
 src/main/resources/templates/chat.html
-kai.properties     user-editable config, passed with --config
+kai.properties     user settings; lives next to kai.jar (or project root in the IDE)
+README.md          how to run (users first, developers at the bottom)
 sampleDocs/        10 cloud-onboarding test documents (git-ignored)
 ```
 
@@ -95,26 +97,22 @@ scanner doesn't flag a file just for naming a related topic.
 
 ## Configuration
 
-Users edit `kai.properties` and pass it in at startup:
-
-```
-java -jar kai.jar --config=/path/to/kai.properties
-./mvnw spring-boot:run -Dspring-boot.run.arguments=--config=/path/to/kai.properties
-```
-
-Leaving out `--config` uses `./kai.properties`. It holds every setting (app, model,
-scan target, backup) and overrides the built-in `application.properties`.
+`kai.properties` is required and is checked before Spring starts (`KaiConfig`); any problem
+is listed in plain words and the app exits. Where it is looked for: `--config=<path>` →
+`./kai.properties` in the working directory. Relative paths start from
+the file's folder. Full rules and run instructions: `README.md`.
 
 | Key | Default | Purpose |
 |---|---|---|
-| `kai.scan.repository` | `local` | Which adapter to scan with. Unknown value → startup fails |
-| `kai.scan.location` | `.` | What to scan (local: folder path) |
-| `kai.scan.parallel` | `4` | Files checked at the same time. Lower it on 429 rate-limit errors. Below 1 → startup fails |
-| `kai.backup-dir` | **required** | Where originals are backed up before writing |
+| `kai.scan.local` | | Folders to scan, comma-separated. Each must exist |
+| `kai.scan.box` | | Box folder URL. Placeholder: rejected until the Box adapter exists |
+| `kai.scan.parallel` | `4` | Files checked at the same time. Lower it on 429 rate-limit errors. Must be ≥ 1 |
+| `kai.backup-dir` | **required** | Where originals are backed up before writing. Created if missing |
 | `spring.ai.openai.*`, `server.port`, … | from application.properties | Any Spring Boot / Spring AI key |
 
-A wrong `--config` path, or a blank `kai.backup-dir`, stops startup immediately.
-Later settings (e.g. SharePoint credentials) go in the same file under `kai.*`.
+Unknown `kai.*` keys are errors, so typos don't get silently ignored.
+
+Build: `./mvnw package` → `target/kai-0.0.1-SNAPSHOT.jar`.
 
 ## Stages (review each before moving on)
 

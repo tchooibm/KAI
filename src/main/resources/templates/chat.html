@@ -95,13 +95,15 @@
             td.name { white-space: normal; }
             th:nth-child(3), td.why { display: none; }
         }
+        .where code + code { margin-left: .4em; }
+        small.where-from { display: block; color: var(--muted); font-size: .78em; }
     </style>
 </head>
 <body>
 <header>
     <h1>Kai</h1>
     <div class="where">
-        <span>Scanning <code th:text="${target.repository + ':' + target.location}"></code></span>
+        <span>Scanning <code th:each="t : ${targets}" th:text="${t.location}" th:title="${t.label()}"></code></span>
         <span>Backups in <code th:text="${backupDir}"></code></span>
     </div>
 </header>
@@ -128,7 +130,7 @@
                     <tr><th>File</th><th>Result</th><th>Why</th></tr>
                     <tr th:each="f : ${m.report.findings}" th:unless="${f.status.name() == 'NOT_AFFECTED'}"
                         th:class="${f.manual()} ? 'AFFECTED MANUAL' : ${f.status.name()}">
-                        <td class="name"><span class="file" th:text="${f.file}"></span></td>
+                        <td class="name"><span class="file" th:text="${f.file}"></span><small class="where-from" th:if="${m.report.targets.size() > 1}" th:text="${f.target.location}"></small></td>
                         <td class="result" th:text="${f.manual()} ? 'Update by hand' : (${f.affected()} ? 'Must change' : 'Could not check')"></td>
                         <td class="why" th:text="${f.reason}"></td>
                     </tr>
@@ -137,7 +139,7 @@
                     <summary th:text="'No change needed (' + ${m.report.findings.size() - m.report.affectedCount() - m.report.errorCount()} + ')'"></summary>
                     <table>
                         <tr th:each="f : ${m.report.findings}" th:if="${f.status.name() == 'NOT_AFFECTED'}" class="NOT_AFFECTED">
-                            <td class="name"><span class="file" th:text="${f.file}"></span></td>
+                            <td class="name"><span class="file" th:text="${f.file}"></span><small class="where-from" th:if="${m.report.targets.size() > 1}" th:text="${f.target.location}"></small></td>
                             <td class="result">No change</td>
                             <td class="why" th:text="${f.reason}"></td>
                         </tr>
