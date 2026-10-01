@@ -56,14 +56,30 @@ After a few seconds Kai prints its address. Open **http://localhost:8080** in yo
 ### 4. Use Kai
 
 Type the change in the box at the bottom and click **Scan documents**. Kai checks every
-file and shows:
+file and groups the results by **Location**: each folder from `kai.scan.local`, written as
+in `kai.properties`, with how many of its files are affected (hover to see the full path).
+For each file it shows:
 
 | Result | Meaning |
 |---|---|
-| **Must change** | The file mentions the change. Kai can update it for you |
+| **Must change** | The file mentions the change. Kai shows its proposed edit below it (see next table) |
+| **Could not apply** | The file must change, but Kai could not place its edit in the text. Update it yourself |
 | **Update by hand** | The file mentions the change, but it is a Word, PowerPoint or PDF file. Open it and change it yourself |
 | **Could not check** | Kai could not read the file or reach the AI. Check this file yourself, or try again |
 | **No change needed** | Click to see the list. These files do not need updating |
+
+You can describe the change in a sentence, or paste release notes several paragraphs long.
+**Enter** starts a new line; click **Scan documents** to send.
+
+Under each **Must change** file you see:
+
+- What changes: removed lines in red (−), new lines in green (+). Unchanged parts are folded.
+- The reviewer's note: "looks right", or what to check.
+- **Edit**: opens the proposed text so you can change it. Click **Save edits** and the
+  red/green view is updated with your text.
+- **Include this file**: untick it to leave the file as it is.
+
+Saving edits does **not** change your files yet.
 
 ## If something goes wrong
 

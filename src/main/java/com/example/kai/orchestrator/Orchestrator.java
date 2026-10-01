@@ -14,6 +14,8 @@ import org.slf4j.LoggerFactory;
 
 import org.springframework.stereotype.Service;
 
+import com.example.kai.agent.editor.EditorAgent;
+import com.example.kai.agent.reviewer.ReviewerAgent;
 import com.example.kai.agent.scanner.ScannerAgent;
 import com.example.kai.config.KaiProperties;
 import com.example.kai.config.KaiProperties.Target;
@@ -21,7 +23,7 @@ import com.example.kai.repository.DocumentRepository;
 
 // The only thing the chat talks to. Plain Java: decides which agent runs when
 // and passes results between them. Agents never talk to the user directly.
-// Stage 2: repositories -> ScannerAgent (LLM) -> Report. Later: EditorAgent, ReviewerAgent, ChangeWriter.
+// Per file: ScannerAgent -> (affected + editable) EditorAgent -> ReviewerAgent. Later: ChangeWriter.
 @Service
 public class Orchestrator {
 
@@ -29,12 +31,17 @@ public class Orchestrator {
 
 	private final Map<String, DocumentRepository> repositories = new TreeMap<>();
 	private final ScannerAgent scanner;
+	private final EditorAgent editor;
+	private final ReviewerAgent reviewer;
 	private final KaiProperties properties;
 
 	// Spring injects every DocumentRepository bean, so new adapters register themselves
-	public Orchestrator(List<DocumentRepository> repositories, ScannerAgent scanner, KaiProperties properties) {
+	public Orchestrator(List<DocumentRepository> repositories, ScannerAgent scanner, EditorAgent editor,
+			ReviewerAgent reviewer, KaiProperties properties) {
 		repositories.forEach(r -> this.repositories.put(r.type(), r));
 		this.scanner = scanner;
+		this.editor = editor;
+		this.reviewer = reviewer;
 		this.properties = properties;
 		properties.targets().forEach(t -> repository(t.type())); // no adapter for a target -> fail at startup
 	}
@@ -44,8 +51,9 @@ public class Orchestrator {
 		return properties.targets();
 	}
 
-	// Checks up to kai.scan.parallel files at the same time, across all targets;
-	// the report keeps the target and file-list order
+	// Handles up to kai.scan.parallel files at the same time, across all targets. Each file runs
+	// scan -> edit -> review in one task, so edits for one file overlap with scans of others.
+	// The report keeps the target and file-list order
 	public Finding.Report scan(String instruction) throws IOException {
 		List<Future<Finding>> futures = new ArrayList<>();
 		try (ExecutorService pool = Executors.newFixedThreadPool(properties.parallel())) { // close() waits for all
@@ -64,14 +72,53 @@ public class Orchestrator {
 	private Finding check(Target target, DocumentRepository repo, String instruction, String id) {
 		boolean editable = repo.canWrite(id);
 		try {
-			ScannerAgent.Verdict v = scanner.assess(instruction, id, repo.read(target.location(), id));
-			Finding.Status status = v.affected() ? Finding.Status.AFFECTED : Finding.Status.NOT_AFFECTED;
-			return new Finding(target, id, status, v.reason(), editable);
+			String content = repo.read(target.location(), id);
+			ScannerAgent.Verdict v = scanner.assess(instruction, id, content);
+			if (!v.affected()) {
+				return new Finding(target, id, Finding.Status.NOT_AFFECTED, v.reason(), editable, null);
+			}
+			Proposal proposal = editable ? propose(instruction, id, content) : null;
+			return new Finding(target, id, Finding.Status.AFFECTED, v.reason(), editable, proposal);
 		}
 		catch (Exception e) {
 			log.warn("SCANNER {} {} -> ERROR", target.label(), id, e);
-			return new Finding(target, id, Finding.Status.ERROR, e.getClass().getSimpleName() + ": " + e.getMessage(), editable);
+			return new Finding(target, id, Finding.Status.ERROR, message(e), editable, null);
 		}
+	}
+
+	// Editor -> apply (one automatic retry if a passage doesn't match) -> Reviewer. Never throws.
+	private Proposal propose(String instruction, String id, String content) {
+		String proposed;
+		try {
+			try {
+				proposed = Patch.apply(content, editor.propose(instruction, id, content, null));
+			}
+			catch (Patch.NoMatch first) {
+				log.info("EDITOR {} -> retry:\n{}", id, first.getMessage());
+				proposed = Patch.apply(content, editor.propose(instruction, id, content, first.getMessage()));
+			}
+		}
+		catch (Patch.NoMatch e) {
+			log.warn("EDITOR {} -> could not apply:\n{}", id, e.getMessage());
+			return Proposal.failed(content, "Kai's edits did not match the file text, so nothing was proposed.\n" + e.getMessage());
+		}
+		catch (Exception e) {
+			log.warn("EDITOR {} -> ERROR", id, e);
+			return Proposal.failed(content, "The editor failed: " + message(e));
+		}
+		// A reviewer failure keeps the proposal: the note says it wasn't checked
+		try {
+			ReviewerAgent.Review r = reviewer.review(instruction, id, content, proposed);
+			return Proposal.ready(content, proposed, r.ok(), r.note());
+		}
+		catch (Exception e) {
+			log.warn("REVIEWER {} -> ERROR", id, e);
+			return Proposal.ready(content, proposed, null, "The reviewer could not check this proposal: " + message(e));
+		}
+	}
+
+	private static String message(Exception e) {
+		return e.getClass().getSimpleName() + ": " + e.getMessage();
 	}
 
 	private DocumentRepository repository(String type) {

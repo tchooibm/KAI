@@ -93,7 +93,7 @@ public final class KaiConfig {
 		for (String folder : local) {
 			Path dir = path(home, folder);
 			if (Files.isDirectory(dir)) {
-				targets.add(new Target("local", dir.toString()));
+				targets.add(new Target("local", dir.toString(), folder));
 			}
 			else {
 				problems.add("Folder to scan not found: " + dir);

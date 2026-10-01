@@ -26,7 +26,7 @@ ChatController (UI: /)  ── the ONLY thing users interact with
 Orchestrator  ── plain Java, decides the order and passes results between agents.
                  Agents have no UI and never talk to the user.
   ├─ ScannerAgent   "Is this file affected? why?"            (1 LLM call per file)
-  ├─ EditorAgent    "Rewrite this file to apply the change"  (affected files only)
+  ├─ EditorAgent    "Which passages change, and to what?"    (affected text files only)
   └─ ReviewerAgent  "Does the edit do only what was asked?"  (advice shown to you)
       │
       ▼
@@ -50,11 +50,11 @@ Spring injects all of them into the Orchestrator; each `kai.scan.<type>` key in 
 src/main/java/com/example/kai/
 ├── KaiApplication.java
 ├── chat/          ChatController: the single user interface (/ and /chat)
-├── orchestrator/  Orchestrator, Finding (+ Report): coordinates agents
+├── orchestrator/  Orchestrator, Finding (+ Report), Proposal, Patch (applies edits), Diff (line diff)
 ├── agent/
 │   ├── scanner/   ScannerAgent: stage 1 stub, stage 2 LLM
-│   ├── editor/    (stage 3) EditorAgent
-│   └── reviewer/  (stage 3) ReviewerAgent
+│   ├── editor/    EditorAgent: passage edits (original -> replacement)
+│   └── reviewer/  ReviewerAgent: ok + note on the edited result
 ├── repository/    DocumentRepository + all adapters (LocalFileRepository; later SharePoint, OneDrive)
 ├── writer/        (stage 4) ChangeWriter: report, backup, write, rollback
 └── config/        KaiConfig: finds + checks kai.properties before Spring starts; KaiProperties: the result
@@ -121,8 +121,9 @@ Build: `./mvnw package` → `target/kai-0.0.1-SNAPSHOT.jar`.
 | 1 | Skeleton: sample docs, `DocumentRepository` + `LocalFileRepository`, orchestrator, **stub** scanner, report table | No | Typing a change request in the chat at `/` returns a table of every file with affected yes/no from a keyword stub ✅ built |
 | 2 | ScannerAgent: real LLM, structured output `Verdict(affected, reason)`; per-file Error status | Yes | On `sampleDocs/`, the four requests above give the expected counts; docx/pptx/pdf are read (Tika) and shown as "Update by hand"; bad model → "Could not check" rows, never "No change" ✅ built |
 | 2b | **Box (cloud) + local together**: `BoxRepository` reads Box files by public shared link, read-only | No (scan uses LLM as before) | Two sample docs moved from `sampleDocs/` to Box: the Java 21 request still finds 4 affected / 2 by hand, Box rows show their source and open in Box. Bad or folder link → plain startup message. ✅ Done instead through a Box Drive folder in `kai.scan.local` (see below) |
-| 3 | EditorAgent + ReviewerAgent → **review in the chat**: the bot reply shows, per file: a **diff** of original vs proposed, an Edit toggle (editable textarea of the proposed text), include checkbox, reviewer note. "Save edits" button | Yes | You can change a proposal, save, reload, and still see your edit (diff updated). Editor + Reviewer run in parallel. Nothing is written to disk |
+| 3 | EditorAgent + ReviewerAgent → **review in the chat**: the bot reply shows, per file: a **diff** of original vs proposed, an Edit toggle (editable textarea of the proposed text), include checkbox, reviewer note. "Save edits" button | Yes | You can change a proposal, save, reload, and still see your edit (diff updated). Editor + Reviewer run in parallel. Nothing is written to disk ✅ built |
 | 4 | **Finalize**: write final HTML report (before/after for each selected file) → back up originals → write → if any write fails, restore every file from the backup | No | Happy path: files changed and report saved. Forced failure: every file identical to before, and the chat says "Rolled back" |
+| 4b | **docx/pptx write-back** (after stage 4, decided 2026-10-01): Apache POI, edits only inside one paragraph; anything else stays "Could not apply" / "Update by hand". PDF stays by hand | No (edits come from the Editor as now) | Sample docx/pptx edited, open in Word/PowerPoint without a repair prompt, rollback restores them byte-for-byte |
 | 5 | Demo polish: "simulate failure" checkbox (fails on the last file) to show rollback live, agent log panel, clearer errors | No | 2-minute demo runs cleanly |
 
 Stage 2b outcome (2026-10-01): **done through Box Drive, no Box code.** The hackathon has no
@@ -154,7 +155,7 @@ Parked plan (shared links, needs links that download without login):
 - **Later, with a token:** folder links via the Box API (`/2.0/shared_items` + folder items),
   then write-back. Same adapter, no changes elsewhere.
 
-Stage 3 requirements (agreed, not started):
+Stage 3 requirements (built 2026-10-01):
 
 - **Parallel:** Editor + Reviewer run per file in parallel, in the same `kai.scan.parallel`
   pool as the scan (Reviewer runs after the Editor for the same file). A failure on one file
@@ -179,6 +180,28 @@ Stage 3 requirements (agreed, not started):
 - **Multi-line request box:** the chat input becomes a textarea, so users can paste release
   notes or a feature description several paragraphs long. Enter only adds a new line (never
   sends); the only way to send is clicking **Scan documents**. No keyboard shortcut.
+
+How stage 3 is built:
+
+- `Orchestrator.check` runs scan → `propose` in one pool task per file, so edits overlap with
+  other files' scans. `propose` = `EditorAgent` → `Patch.apply` → on `NoMatch`, one retry with
+  the problems listed → `ReviewerAgent`. A reviewer failure keeps the proposal ("Not reviewed").
+- `Patch.apply` locates every original in the *unchanged* file (exactly once, no overlaps),
+  then splices the replacements in. Edits written with `\n` are matched against `\r\n` files.
+- `Proposal` (mutable, in the session) holds original, proposed, include tick, edited flag and
+  the review. `Diff` is a plain LCS line diff with 2 context lines; the rest is folded.
+- The report table is grouped by target (`Report.groups()`): a Location column (the
+  `kai.scan.*` entry as typed, `Target.entry`, plus "N of M affected") spans its files' rows,
+  followed by one folded "No change needed" row per location.
+- `POST /save` takes `report=<message index>`, `text<i>` and `include<i>` (i = finding index).
+  Textarea `\r\n` is turned back into `\n` unless the file uses `\r\n`.
+
+Stage 4b notes (not started; text files only until then): read docx/pptx with POI per paragraph
+(not Tika) so passages match what is written back; replace only the text pieces (runs) inside
+the match so the rest keeps its formatting; cover body + tables (docx) and shapes + tables
+(pptx), headers/footers/notes later; for Office files the Edit toggle edits each replacement
+passage, not the whole text. Needs byte-level read/write in `DocumentRepository`, which
+stage 4's backup should already provide. Estimate ~1 day (docx ~½ day, pptx +2–3 h).
 
 Stage 4 also detects **stale files**: if a file changed on disk after the scan,
 Finalize refuses to overwrite it, so your review can't silently clobber newer content.

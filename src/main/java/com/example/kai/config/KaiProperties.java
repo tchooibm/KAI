@@ -9,7 +9,8 @@ public record KaiProperties(Path backupDir, List<Target> targets, int parallel) 
 
 	// One place to scan. type picks the DocumentRepository adapter (local; later box).
 	// location: local = absolute folder path, box = folder URL.
-	public record Target(String type, String location) {
+	// entry: the value as typed in kai.properties (e.g. "./sampleDocs"), shown in the report.
+	public record Target(String type, String location, String entry) {
 
 		public String label() {
 			return type + ":" + location;
