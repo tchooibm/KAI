@@ -34,6 +34,12 @@ a Box Drive, OneDrive or other synced folder, or `.kai-runtime` gets uploaded to
 
 ## 2. Set up kai.properties
 
+**You can skip this step.** When you open Kai in the browser, its **start page** shows the
+folders, the backup folder and the AI connection from `kai.properties` (empty fields if there is
+nothing yet), checks each one as you fill it in, and shows any problem under its field. When
+everything works, click **Start Kai**. Kai saves the values into `kai.properties`.
+This section is for editing the file by hand instead.
+
 Open `kai.properties` in a plain text editor: **Notepad** on Windows (right-click → **Open with**
 → **Notepad**), **TextEdit** on Mac (right-click → **Open With** → **TextEdit**). Do not use Word.
 
@@ -61,6 +67,8 @@ several folders, separate them with commas:
 ```
 kai.scan.local=~/Documents/Runbooks, C:\Team\Docs
 ```
+
+On the start page, each folder has its own field instead: click **+ Add folder** for another one.
 
 **Box Drive** and other synced folders (OneDrive, shared drives) work like any other folder.
 Example on a Mac: `kai.scan.local=~/Library/CloudStorage/Box-Box/Team Docs`.
@@ -95,11 +103,14 @@ spring.ai.openai.base-url=${ICA_BASE_URL_V1}
 spring.ai.openai.chat.model=gpt-5.6-terra
 ```
 
-Your Kai admin tells you what to put here.
+Your Kai admin tells you what to put here. You can also type them on the start page: once the
+address and key work, the **Model** list shows the models you can use. Kai saves only values that
+work, into these lines. To get back to the start page later, click **Change settings** next to
+*AI model* at the top of the Kai page.
 
 - `api-key` is your key for the AI service. Keep it private, like a password, and do not share
   your `kai.properties` with others once your key is in it.
-- `base-url` is the address of the AI service. It must end with `/v1`.
+- `base-url` is the address of the AI service. It ends with `/v1`; Kai adds it if it is missing.
 - `chat.model` is the AI model's name.
 - `${...}` means "take the value from this computer's settings". If your admin set that up for
   you, leave those lines as they are. Otherwise replace the whole `${...}` with the value, for
@@ -138,14 +149,20 @@ and click **Open Anyway** next to the message about `kai`. On older Macs: right-
 ### Both
 
 The **first start takes longer** (up to a minute) because Kai unpacks itself into a folder
-called `.kai-runtime` next to the program. Later starts are faster. Kai then checks your settings and the AI connection, and shows:
+called `.kai-runtime` next to the program. Later starts are faster. Kai then shows:
 
 ```
-Kai is running at http://localhost:8080
+Kai is running. Open http://localhost:8080 in your browser.
 Keep this window open while you use Kai. Close it to stop Kai.
 ```
 
-Open **http://localhost:8080** in your browser (Chrome, Edge, Safari, …).
+Open **http://localhost:8080** in your browser (Chrome, Edge, Safari, …). You always see the
+**start page** first. If your settings already work, it shows a short **Ready to scan** summary
+(your folders with their number of documents, the backup folder and the AI model): click
+**Start Kai**. Otherwise it shows the settings with each problem under its field. Kai checks a
+field when you leave it (or press Enter), and **Start Kai** stays greyed out until everything
+works. To change settings later, click **Edit settings** on the summary, or **Change settings**
+next to *AI model* on the Kai page.
 
 **Keep the window open** while you use Kai. To stop Kai, close the window (or press
 **Ctrl+C** in it). On a Mac the window then says *[Process completed]*, and you can close it.
@@ -193,28 +210,34 @@ The reply has an **Open the report** link.
 
 ## If something goes wrong
 
-Kai checks its settings and the AI connection when it starts. If something is wrong, the
-window says what to fix and waits for you to press **Enter**. Fix `kai.properties`, save it,
-and start Kai again.
+Problems with the settings never stop Kai. They appear in red on the **start page**, under the
+field they belong to. Fix the field and leave it (or press Enter) to check it again. Nothing is
+saved until you click **Start Kai**, and Start Kai first tests the chosen model, so it only saves
+settings that work. A few problems (marked *in kai.properties* below) can only be fixed
+in the file: fix it, save it, and reload the start page in the browser.
 
 | Message | What to do |
 |---|---|
-| *Kai could not find its settings file* | Put `kai.properties` in the same folder as `kai.exe` / `kai`. Check the name: Windows sometimes saves it as `kai.properties.txt`. In File Explorer turn on **View** → **Show** → **File name extensions** to see the full name |
-| *Folder to scan not found* | Check the path after `kai.scan.local`. Copy it again from File Explorer or Finder |
-| *kai.backup-dir is missing* | Add the line `kai.backup-dir=./kai-backups` |
-| *The backup folder … is inside a folder Kai scans* | Choose a backup folder outside your document folders, for example `kai.backup-dir=~/kai-backups` |
-| *Nothing to scan* | Add a `kai.scan.local=...` line with at least one folder |
-| *Box folders are not supported yet* | Put a `#` in front of the `kai.scan.box` line |
-| *Unknown setting* | A setting name is misspelled. Compare it with the list in the message |
-| *kai.scan.parallel must be a whole number* | Use a number such as `4`, without spaces or letters |
-| *The AI key is not set* / *The AI address is not set* | Fill in the AI connection section with the values from your Kai admin |
-| *The AI address must end with /v1* | Add `/v1` to the end of `spring.ai.openai.base-url` |
+| *There is no settings file yet* | Normal the first time, or if `kai.properties` is not next to `kai.exe` / `kai`. Fill in the fields; **Start Kai** creates the file. If you do have one, check its name: Windows sometimes saves it as `kai.properties.txt` (in File Explorer turn on **View** → **Show** → **File name extensions**) |
+| *Folder to scan not found* | Check the path. Copy it again from File Explorer or Finder |
+| *Backup folder is missing* | Type a backup folder, for example `~/kai-backups` |
+| *The backup folder … is inside a folder Kai scans* | Choose a backup folder outside your document folders, for example `~/kai-backups` |
+| *Folders to scan: add at least one folder* | Type at least one folder |
+| *Box folders are not supported yet* (in kai.properties) | Put a `#` in front of the `kai.scan.box` line |
+| *Unknown setting* (in kai.properties) | A setting name is misspelled. Compare it with the list in the message |
+| *kai.scan.parallel … must be a whole number* (in kai.properties) | Use a number such as `4`, without spaces or letters |
+| *… is not set on this computer* | `kai.properties` takes the value from a `${...}` computer setting that does not exist here. Type the value in the field instead |
+| *The AI key is not set* / *The AI address is not set* | Fill in the address and key, with the values from your Kai admin |
+| *The AI address must start with https://* | Check the address with your Kai admin |
+| *"…" is not offered by this AI service* | The model in `kai.properties` is not available (any more). Choose one from the **Model** list and click **Start Kai** |
+| *Enter the model name your Kai admin gave you* | This AI service does not list its models. Type the name, and click **Start Kai** |
+| *A scan is still running* | Wait until the scan has finished, then click **Start Kai** again |
 | *The AI service refused the key* | The key is wrong or has expired. Ask your Kai admin for a new one |
 | *The AI service does not know this address or model* | Check the address and the model name with your Kai admin |
 | *Kai cannot reach the AI service* | Check that you are online, and on the company VPN if you need one |
 | *Kai could not start: unpacking Java failed* | Kai needs to write into its own folder. Move the Kai folder somewhere you can save files, such as `Documents` (not `Program Files`, and not a read-only shared drive). Also check that your disk is not full |
 | *Kai could not start. The reason is shown above.* | Often the port is in use ("Port 8080 was already in use"). Kai may already be running in another window. Use that one, or close it. Otherwise change `server.port` (see above) |
-| Many files show **Could not check** | If you see "429" or "rate limit", set `kai.scan.parallel=1`. Otherwise start Kai again: it checks the AI connection when it starts |
+| Many files show **Could not check** | If you see "429" or "rate limit", set `kai.scan.parallel=1`. Otherwise click **Change settings** next to *AI model*: the start page tests the AI connection again |
 
 ## Updating Kai
 

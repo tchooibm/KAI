@@ -18,6 +18,7 @@ import com.example.kai.agent.editor.EditorAgent;
 import com.example.kai.agent.reviewer.ReviewerAgent;
 import com.example.kai.agent.scanner.ScannerAgent;
 import com.example.kai.config.KaiProperties;
+import com.example.kai.config.Setup;
 import com.example.kai.config.KaiProperties.Target;
 import com.example.kai.repository.DocumentRepository;
 import com.example.kai.writer.ChangeWriter;
@@ -36,29 +37,29 @@ public class Orchestrator {
 	private final EditorAgent editor;
 	private final ReviewerAgent reviewer;
 	private final ChangeWriter writer;
-	private final KaiProperties properties;
+	private final Setup setup;
 
 	// Spring injects every DocumentRepository bean, so new adapters register themselves
 	public Orchestrator(List<DocumentRepository> repositories, ScannerAgent scanner, EditorAgent editor,
-			ReviewerAgent reviewer, ChangeWriter writer, KaiProperties properties) {
+			ReviewerAgent reviewer, ChangeWriter writer, Setup setup) {
 		repositories.forEach(r -> this.repositories.put(r.type(), r));
 		this.scanner = scanner;
 		this.editor = editor;
 		this.reviewer = reviewer;
 		this.writer = writer;
-		this.properties = properties;
-		properties.targets().forEach(t -> repository(t.type())); // no adapter for a target -> fail at startup
+		this.setup = setup;
 	}
 
-	// Where change requests are checked, from kai.scan.* in the config file
+	// Where change requests are checked, from kai.scan.* (as set on the start page)
 	public List<Target> targets() {
-		return properties.targets();
+		return setup.properties().targets();
 	}
 
 	// Handles up to kai.scan.parallel files at the same time, across all targets. Each file runs
 	// scan -> edit -> review in one task, so edits for one file overlap with scans of others.
 	// The report keeps the target and file-list order. Each step is added to progress for the chat page.
 	public Finding.Report scan(String instruction, Progress progress) throws IOException {
+		KaiProperties properties = setup.properties(); // one set of settings from start to end
 		List<Future<Finding>> futures = new ArrayList<>();
 		try (ExecutorService pool = Executors.newFixedThreadPool(properties.parallel())) { // close() waits for all
 			for (Target target : properties.targets()) {

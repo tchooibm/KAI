@@ -5,8 +5,9 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
+
+import com.example.kai.config.ModelProvider;
 
 // Agent 2 of 3. Called only by the Orchestrator, never by the user.
 // Proposes passage edits for one affected file. Nothing is written to disk here.
@@ -39,10 +40,11 @@ public class EditorAgent {
 	public record Edits(List<Edit> edits) {
 	}
 
-	private final ChatClient chatClient;
+	private final ModelProvider models;
 
-	public EditorAgent(ChatClient.Builder builder) {
-		this.chatClient = builder.defaultSystem(SYSTEM).build();
+	// Asked on every call, so a model chosen on the start page is used at once
+	public EditorAgent(ModelProvider models) {
+		this.models = models;
 	}
 
 	// problems: null on the first try; on the retry, why the previous edits could not be applied
@@ -55,7 +57,7 @@ public class EditorAgent {
 				+ (problems == null ? "" : "\n\nYour previous edits could not be applied:\n" + problems
 						+ "\nReturn the full list of edits again, with every original copied exactly from the file.");
 
-		Edits result = chatClient.prompt()
+		Edits result = models.client(SYSTEM).prompt()
 				.user(user)
 				.call()
 				.entity(Edits.class, spec -> spec.validateSchema()); // retry if the JSON doesn't match

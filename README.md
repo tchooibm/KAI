@@ -70,6 +70,12 @@ and you do not want that uploaded.
 
 ## 2. Set up kai.properties
 
+**You can skip this step.** Kai's **start page** (the first page in the browser) shows the
+folders, the backup folder and the AI connection from `kai.properties` (empty fields if there is
+nothing yet), checks each one as you fill it in, and lists the AI models. When everything works,
+click **Start Kai**: Kai saves the values into `kai.properties`. This section is for editing the
+file by hand instead.
+
 Open `kai.properties` in a plain text editor: **Notepad** on Windows (right-click → **Open
 with** → **Notepad**), **TextEdit** on Mac (right-click → **Open With** → **TextEdit**).
 Do not use Word.
@@ -88,11 +94,11 @@ The settings, in the order you find them in the file:
 
 | Setting | What to put there |
 |---|---|
-| `kai.scan.local` | **Required.** The folder or folders with your documents. Kai also checks every folder inside them. Separate several folders with commas: `kai.scan.local=~/Documents/Runbooks, C:\Team\Docs`. Box Drive folders work like any other folder, for example `~/Library/CloudStorage/Box-Box/Team Docs` on a Mac. Files that are only in the cloud and not downloaded are skipped |
+| `kai.scan.local` | **Required.** The folder or folders with your documents. Kai also checks every folder inside them. Separate several folders with commas: `kai.scan.local=~/Documents/Runbooks, C:\Team\Docs`. (On the start page each folder has its own field: **+ Add folder**.) Box Drive folders work like any other folder, for example `~/Library/CloudStorage/Box-Box/Team Docs` on a Mac. Files that are only in the cloud and not downloaded are skipped |
 | `# kai.scan.box` | Leave it as it is, with the `#`. Box web links are not supported yet |
 | `kai.backup-dir` | **Required.** Where Kai keeps the original files and a report of every change. Kai creates it. It must **not** be inside a folder you check, for example `kai.backup-dir=~/kai-backups` |
 | `kai.scan.parallel` | How many files Kai checks at the same time. Leave it at `4`. Lower it to `2` or `1` if you see "429" or "rate limit" |
-| `spring.ai.openai.…` | The AI connection: key, address and model. **Your Kai admin tells you what to put here.** Keep the key private, like a password. `${...}` means "take the value from this computer's settings"; if your admin did not set that up, replace the whole `${...}` with the value |
+| `spring.ai.openai.…` | The AI connection: key, address and model. **Your Kai admin tells you what to put here.** You can also type them on the start page, which tests them, lists the models, and saves working values into these lines. Keep the key private, like a password. `${...}` means "take the value from this computer's settings"; if your admin did not set that up, replace the whole `${...}` with the value |
 | `# server.port=8080` | Only if Kai says the port is in use: remove the `#` and change `8080` to another number, such as `8090` |
 
 **Save the file**, and keep the name exactly `kai.properties`.
@@ -129,14 +135,19 @@ java -jar kai.jar
 
 ### Both options
 
-Kai checks your settings and the AI connection, then shows:
+Kai shows:
 
 ```
-Kai is running at http://localhost:8080
+Kai is running. Open http://localhost:8080 in your browser.
 Keep this window open while you use Kai. Close it to stop Kai.
 ```
 
-Open **http://localhost:8080** in your browser (Chrome, Edge, Safari, …).
+Open **http://localhost:8080** in your browser (Chrome, Edge, Safari, …). You always see the
+**start page** first. If your settings already work, it shows a short **Ready to scan** summary
+(folders with their number of documents, backup folder, AI model): click **Start Kai**. Otherwise
+it shows the settings with each problem under its field. Kai checks a field when you leave it
+(or press Enter). **Start Kai** is greyed out until everything works. Click **Edit settings** on
+the summary, or **Change settings** next to *AI model* on the Kai page, to change them later.
 
 **Keep the window open** while you use Kai. To stop Kai, close the window, or press
 **Ctrl+C** in it.
@@ -185,22 +196,28 @@ The reply has an **Open the report** link.
 
 ## If something goes wrong
 
-Kai checks its settings and the AI connection when it starts. If something is wrong, the
-window says what to fix and waits for you to press **Enter**. Fix `kai.properties`, save
-it, and start Kai again.
+Problems with the settings never stop Kai. They appear in red on the **start page**, under the
+field they belong to. Fix the field and leave it (or press Enter) to check it again. Nothing is
+saved until **Start Kai**, and Start Kai first tests the chosen model, so it only saves settings
+that work. Problems marked *(in kai.properties)* can only be fixed in the file: fix it,
+save it, and reload the start page.
 
 | Message | What to do |
 |---|---|
-| *Kai could not find its settings file* | Put `kai.properties` in the same folder as Kai. With option B, also start Kai from that folder. Check the name: Windows sometimes saves it as `kai.properties.txt`. In File Explorer turn on **View** → **Show** → **File name extensions** to see the full name |
-| *Folder to scan not found* | Check the path after `kai.scan.local`. Copy it again from File Explorer or Finder |
-| *kai.backup-dir is missing* | Add the line `kai.backup-dir=./kai-backups` |
-| *The backup folder … is inside a folder Kai scans* | Choose a backup folder outside your document folders, for example `kai.backup-dir=~/kai-backups` |
-| *Nothing to scan* | Add a `kai.scan.local=...` line with at least one folder |
-| *Box folders are not supported yet* | Put a `#` in front of the `kai.scan.box` line |
-| *Unknown setting* | A setting name is misspelled. Compare it with the list in the message |
-| *kai.scan.parallel must be a whole number* | Use a number such as `4`, without spaces or letters |
-| *The AI key is not set* / *The AI address is not set* | Fill in the AI connection with the values from your Kai admin |
-| *The AI address must start with https:// / end with /v1* | Fix `spring.ai.openai.base-url` with your Kai admin |
+| *There is no settings file yet* | Normal the first time: fill in the fields, and **Start Kai** creates `kai.properties`. If you do have one, put it in the same folder as Kai (with option B, also start Kai from that folder) and check the name: Windows sometimes saves it as `kai.properties.txt` (File Explorer → **View** → **Show** → **File name extensions**) |
+| *Folder to scan not found* | Check the path. Copy it again from File Explorer or Finder |
+| *Backup folder is missing* | Type a backup folder, for example `~/kai-backups` |
+| *The backup folder … is inside a folder Kai scans* | Choose a backup folder outside your document folders, for example `~/kai-backups` |
+| *Folders to scan: add at least one folder* | Type at least one folder |
+| *Box folders are not supported yet* (in kai.properties) | Put a `#` in front of the `kai.scan.box` line |
+| *Unknown setting* (in kai.properties) | A setting name is misspelled. Compare it with the list in the message |
+| *kai.scan.parallel … must be a whole number* (in kai.properties) | Use a number such as `4`, without spaces or letters |
+| *… is not set on this computer* | `kai.properties` takes the value from a `${...}` computer setting that does not exist here. Type the value in the field instead |
+| *The AI key is not set* / *The AI address is not set* | Fill in the values from your Kai admin |
+| *The AI address must start with https://* | Check the address with your Kai admin. A missing `/v1` at the end is added automatically |
+| *"…" is not offered by this AI service* | The model in `kai.properties` is not available (any more). Choose one from the **Model** list and click **Start Kai** |
+| *Enter the model name your Kai admin gave you* | This AI service does not list its models. Type the name, and click **Start Kai** |
+| *A scan is still running* | Wait until the scan has finished, then click **Start Kai** again |
 | *The AI service refused the key* | The key is wrong or has expired. Ask your Kai admin for a new one |
 | *The AI service does not know this address or model* | Check the address and the model name with your Kai admin |
 | *Kai cannot reach the AI service* | Check that you are online, and on the company VPN if you need one |
@@ -208,7 +225,7 @@ it, and start Kai again.
 | *java is not recognized* / *command not found: java* (option B) | Java is not installed. Install Java 25, or ask your admin for option A |
 | *UnsupportedClassVersionError* (option B) | Your Java is too old. Install Java 25 |
 | *Kai could not start. The reason is shown above.* | Often "Port 8080 was already in use": Kai may already be running in another window. Use that one, or close it, or change `server.port` |
-| Many files show **Could not check** | If you see "429" or "rate limit", set `kai.scan.parallel=1`. Otherwise start Kai again: it checks the AI connection when it starts |
+| Many files show **Could not check** | If you see "429" or "rate limit", set `kai.scan.parallel=1`. Otherwise click **Change settings**: the start page tests the AI connection again |
 
 ## Updating or removing Kai
 
@@ -226,12 +243,14 @@ else and you still need it.
 ## What it is
 
 Kai is a Spring Boot 4.1 web app (Java 25, Thymeleaf, Spring AI 2.0.1 with the OpenAI
-starter) that runs locally on the user's machine and talks to an OpenAI-compatible
-gateway. The user only ever sees one chat page at `/`. Behind it, a plain-Java
-orchestrator runs three LLM agents per file:
+module; `ModelProvider` builds the chat model in code, it is not auto-configured) that runs
+locally on the user's machine and talks to an OpenAI-compatible gateway. Each browser session opens on a start page (`/start`) for the settings, then the
+user works in one chat page at `/`. Behind it, a plain-Java orchestrator runs three LLM
+agents per file:
 
 ```
-ChatController (UI at /)  ── the only thing users interact with
+StartController (/start)  ── settings: folders, backup folder, AI address/key/model
+ChatController (UI at /)  ── where users work; agents never have a UI
       │
       ▼
 Orchestrator  ── plain Java; fixed pool of kai.scan.parallel threads, one task per file
@@ -257,8 +276,9 @@ kai/
 ├── kai.properties               dev settings (scans ./sampleDocs); also the template shipped to users
 ├── PLAN.md                      architecture, flow and stage plan
 ├── src/main/java/com/example/kai/
-│   ├── KaiApplication.java      main: KaiConfig.load → Spring → ModelCheck → prints the URL
-│   ├── chat/                    ChatController: the single UI (/), scan job, /progress, /save, /finalize, /report
+│   ├── KaiApplication.java      main: starts Spring (with kai.properties if any), prints the URL
+│   ├── chat/                    StartController: the start page (/start + its JSON: /start/state, /folders, /ai, /proceed)
+│   │                            ChatController: the chat (/), scan job, /progress, /save, /finalize, /report
 │   ├── orchestrator/            Orchestrator, Finding (+ Report), Proposal, Patch, Diff, Progress
 │   ├── agent/
 │   │   ├── scanner/             ScannerAgent
@@ -266,11 +286,12 @@ kai/
 │   │   └── reviewer/            ReviewerAgent
 │   ├── repository/              DocumentRepository + LocalFileRepository (Tika for Office/PDF)
 │   ├── writer/                  ChangeWriter: stale check, report, backup, write, rollback
-│   └── config/                  KaiConfig (finds and checks kai.properties before Spring),
-│                                KaiProperties (the result), ModelCheck (AI connection at startup)
+│   └── config/                  KaiConfig (finds, reads, checks and writes kai.properties),
+│                                KaiProperties (checked kai.* values), Setup (holds them; start-page logic),
+│                                ModelProvider (the AI connection: lists models, tests, builds the client)
 ├── src/main/resources/
 │   ├── application.properties   built-in defaults; kai.properties overrides them
-│   └── templates/               chat.html (the UI), final-report.html (saved report)
+│   └── templates/               start.html (start page), chat.html (the UI), final-report.html (saved report)
 ├── sampleDocs/                  demo documents (git-ignored)
 └── packaging/                   mechanism 2: one executable per OS
     ├── build.sh                 builds dist/ from an input folder (jar + JREs + kai.properties + README)
@@ -283,9 +304,10 @@ kai/
 ## Requirements
 
 - JDK 25. The build fails on any other version (enforcer rule in `pom.xml`).
-- Environment variables `ICA_CODEX_KEY` and `ICA_BASE_URL_V1`, or put the values straight
-  into `kai.properties`. The base URL must start with `https://` and end in `/v1`: the
-  OpenAI Java SDK only appends `chat/completions`.
+- An OpenAI-compatible AI service: address and key, typed on the start page, or in
+  `kai.properties` (directly or as `${ICA_CODEX_KEY}` / `${ICA_BASE_URL_V1}` environment
+  variables). The address must end in `/v1` (the OpenAI Java SDK only appends
+  `chat/completions`); Kai adds it if missing.
 - For mechanism 2 only: a Mac, Go (`brew install go`), and a Java 25 runtime for each target OS.
 
 ## Run from the IDE or command line
@@ -301,35 +323,65 @@ settings file, add the program argument `--config=/path/to/kai.properties`.
 
 ## How kai.properties is found and loaded
 
-Both mechanisms below depend on this. `KaiApplication.main` calls `KaiConfig.load`
-**before Spring starts**, so mistakes give a plain message, wait for Enter, and exit with
-code 1 instead of a stack trace.
+Both mechanisms below depend on this. Nothing about it stops Kai: `KaiApplication.main` only
+starts Spring and prints the URL. Every browser session begins on the **start page**
+(`/start`); the chat (`/`) redirects there until the user clicks **Start Kai** in that session.
 
-1. `--config=<path>`, if given (removed before the args reach Spring). The packaged
-   launcher always passes this, pointing next to the executable.
+Where the file is (`KaiConfig.locate`):
+
+1. `--config=<path>`, if given. The packaged launcher always passes this, pointing next to the
+   executable. It is also passed on to Spring, where `Setup` reads it from `ApplicationArguments`.
 2. Otherwise `./kai.properties` in the working directory (IDE, `java -jar`, `spring-boot:run`).
 
 Relative paths in the file are resolved against the file's own folder, not the working
 directory. Backslashes are kept literally (so Windows paths paste as-is) and surrounding
 quotes are stripped; as a side effect, `\` escapes and line continuations do not work in
-this file. The checked `kai.*` values become the `KaiProperties` bean (registered by an
-initializer, not `@ConfigurationProperties`). A copy of the file is then passed to Spring
-as `--spring.config.additional-location`, so any `spring.*` / `server.*` key in it
-overrides `application.properties`.
+this file. If the file exists, a copy (with `\` doubled) is passed to Spring as
+`--spring.config.additional-location`, so `server.port` and other `spring.*` keys in it
+override `application.properties`.
+
+The start page (`StartController` → `Setup`). `start.html` is static; its script talks JSON:
+
+- **`GET /start/state`:** reads the file fresh (blank fields and nothing checked if there is no
+  file). The AI values have `${NAME}` / `${NAME:default}` resolved from the environment; an
+  unset variable becomes a blank field plus a message. Then it runs both checks below, and
+  `ready` is true if everything passes: the page then shows the **Ready to scan** summary
+  instead of the form.
+- **`POST /start/folders`:** `KaiConfig.inspect` with the form's folders in place of the file's
+  (the backup folder is not created yet). The result is per field: each folder's full path,
+  problem, and document count (`LocalFileRepository.list`, the same listing the scan uses),
+  the backup folder's, a problem for the list as a whole, and `general` problems only fixable in
+  the file (unknown `kai.*` keys, `kai.scan.box`, `kai.scan.parallel`). Called when a folder or
+  backup field loses focus, on Enter, and when a row is added or removed.
+- **`POST /start/ai`:** `GET <base-url>/models` with the key (a 404/405 or non-JSON answer
+  means "type the model name"). Called when the address or key field loses focus. The model
+  list always comes from the service: the dropdown holds only what it lists, and a model from
+  `kai.properties` that it doesn't list is not preselected and is flagged under the field
+  (`Setup.modelProblem`, mirrored in the page's script so picking a model needs no request).
+- **`POST /start/proceed`** (**Start Kai**, enabled only when the last checks all passed and
+  nothing was edited since): checks again (now creating the backup folder), lists the models
+  once more, builds an `OpenAiChatModel` and makes one tiny call with the chosen model (429
+  counts as working), writes the fields that differ from the file (so a `${ICA_CODEX_KEY}`
+  line stays as it is unless the key was changed; comments kept; the file is created if
+  missing), and only then switches `Setup` and `ModelProvider` to the new values and marks the
+  session as started. Refused while the session's scan is running, so one scan uses one set of
+  settings. On failure nothing is saved or switched.
 
 | Key | Default | Rule |
 |---|---|---|
 | `kai.scan.local` | | Comma-separated folders; each must exist. Needed unless another target is set |
 | `kai.scan.box` | | Placeholder for a Box adapter; setting it is an error for now |
-| `kai.backup-dir` | **required** | Created if missing; must not be inside a scanned folder |
-| `kai.scan.parallel` | `4` | Whole number, 1 or more |
+| `kai.backup-dir` | **required** | Created on Start Kai if missing; must not be inside a scanned folder |
+| `kai.scan.parallel` | `4` | Whole number, 1 or more (file only, not on the start page) |
 | any other `kai.*` | | Error: "Unknown setting" (catches typos) |
+| `spring.ai.openai.api-key`, `.base-url`, `.chat.model` | | The AI connection; read and written by the start page |
 
-After Spring starts, `ModelCheck` checks that `spring.ai.openai.api-key` and `base-url`
-are set (an unresolved `${ICA_CODEX_KEY}` counts as not set) and well-formed, and makes one
-tiny model call. 401/403, 404 and network errors become plain messages and exit code 1;
-429 counts as working. Only then is the URL printed. A black-holed address can take a few
-minutes to fail (60 s timeout, SDK retries 3 times).
+The agents never hold a `ChatClient`: each call asks `ModelProvider.client(system)`.
+Orchestrator and ChangeWriter read `Setup.properties()` (the scan takes one snapshot).
+Spring AI's own auto-configured models are switched off in `application.properties`
+(`spring.ai.model.*=none`). OpenAI-compatible services only, for now. A black-holed AI
+address can take a few minutes to fail on Start Kai (60 s timeout, SDK retries 3 times);
+listing models gives up after 10 s (connect) / 30 s (read).
 
 ## Two ways to ship Kai
 
@@ -358,7 +410,8 @@ jar: your classes plus every dependency (Spring, Tomcat, Spring AI, Tika, POI, P
 under `BOOT-INF/lib`, with a Spring Boot loader as `Main-Class`. `java -jar` starts the
 loader, which starts `KaiApplication.main`. Since there is no `--config`, `KaiConfig` looks
 for `./kai.properties` in the **working directory**, which is why users must start it from
-the Kai folder.
+the Kai folder. Started anywhere else, the start page says there is no settings file yet and
+**Start Kai** would create a new one in that directory.
 
 **How to build and ship it.**
 
@@ -466,6 +519,7 @@ unpacks into a fresh folder and never mixes files with the old one.
 
 To add a document source (for example Box): write a `@Component implements
 DocumentRepository` whose `type()` is `box`, then turn the `kai.scan.box` check in
-`KaiConfig` into a `Target("box", url, entry)`. Spring injects every repository into the
+`KaiConfig.inspect` into a `Target("box", url, entry)`, and add its field to the start page
+(`Setup.Form`, `start.html`). Spring injects every repository into the
 `Orchestrator`, and backup and rollback go through the same interface, so they work for
 the new source too.

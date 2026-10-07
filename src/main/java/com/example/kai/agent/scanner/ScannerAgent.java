@@ -3,8 +3,9 @@ package com.example.kai.agent.scanner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
+
+import com.example.kai.config.ModelProvider;
 
 // Agent 1 of 3. Called only by the Orchestrator, never by the user.
 // Decides whether one file must change to fulfil the change request.
@@ -27,11 +28,11 @@ public class ScannerAgent {
 	public record Verdict(boolean affected, String reason) {
 	}
 
-	private final ChatClient chatClient;
+	private final ModelProvider models;
 
-	// The ChatClient.Builder bean is prototype-scoped: each agent gets its own client and system prompt
-	public ScannerAgent(ChatClient.Builder builder) {
-		this.chatClient = builder.defaultSystem(SYSTEM).build();
+	// Asked on every call, so a model chosen on the start page is used at once
+	public ScannerAgent(ModelProvider models) {
+		this.models = models;
 	}
 
 	public Verdict assess(String instruction, String file, String content) {
@@ -41,7 +42,7 @@ public class ScannerAgent {
 				+ "\n\nFile name: " + file
 				+ "\n<file>\n" + content + "\n</file>";
 
-		Verdict verdict = chatClient.prompt()
+		Verdict verdict = models.client(SYSTEM).prompt()
 				.user(user)
 				.call()
 				.entity(Verdict.class, spec -> spec.validateSchema()); // retry if the JSON doesn't match

@@ -40,6 +40,7 @@
         .chip.plain { padding-left: 10px; }
         code, .file { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
         .where code { color: var(--ink); }
+        .where a.change { color: var(--teal); font-size: 13px; font-weight: 500; align-self: center; }
 
         main { flex: 1; padding-bottom: 220px; }
 
@@ -171,6 +172,8 @@
         </dd>
         <dt>Backups</dt>
         <dd><span class="chip plain" th:title="${backupDir}"><code th:text="${backupDir}"></code></span></dd>
+        <dt>AI model</dt>
+        <dd><span class="chip plain"><code th:text="${aiModel}"></code></span><a class="change" href="/start">Change settings</a></dd>
     </dl>
 </header>
 

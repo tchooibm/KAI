@@ -5,47 +5,28 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import com.example.kai.config.KaiConfig;
-import com.example.kai.config.ModelCheck;
 
 @SpringBootApplication
 public class KaiApplication {
 
 	public static void main(String[] args) {
-		// 1. Settings first: a missing or wrong kai.properties stops here with a plain message
-		KaiConfig.Loaded config;
-		try {
-			config = KaiConfig.load(args);
-		}
-		catch (KaiConfig.Invalid e) {
-			KaiConfig.exit(e.getMessage());
-			return;
-		}
-
-		// 2. Start Spring with the checked settings as the KaiProperties bean
-		SpringApplication app = new SpringApplication(KaiApplication.class);
-		app.addInitializers(ctx -> ctx.getBeanFactory().registerSingleton("kaiProperties", config.properties()));
+		// 1. Start Spring. kai.properties (if there is one) is loaded for server.port etc.
+		// Kai's own settings and the AI connection are checked on the start page, not here,
+		// so a missing or wrong file never stops Kai: the user fixes it in the browser.
 		ConfigurableApplicationContext ctx;
 		try {
-			ctx = app.run(KaiConfig.springArgs(args, config.springFile()));
+			ctx = new SpringApplication(KaiApplication.class)
+					.run(KaiConfig.springArgs(args, KaiConfig.springCopy(KaiConfig.locate(args))));
 		}
 		catch (Exception e) { // e.g. port already in use; Spring has already logged the details
 			KaiConfig.exit("Kai could not start. The reason is shown above.");
 			return;
 		}
 
-		// 3. AI key and address: set, and answering? (one tiny model call)
-		System.out.println("Checking the connection to the AI service...");
-		String problem = ctx.getBean(ModelCheck.class).problem();
-		if (problem != null) {
-			ctx.close();
-			KaiConfig.exit(problem);
-			return;
-		}
-
-		// 4. Tell the user where to go
+		// 2. Tell the user where to go
 		String url = "http://localhost:" + ctx.getEnvironment().getProperty("local.server.port");
 		System.out.println();
-		System.out.println("Kai is running at " + url);
+		System.out.println("Kai is running. Open " + url + " in your browser.");
 		System.out.println("Keep this window open while you use Kai. Close it to stop Kai.");
 		System.out.println();
 	}

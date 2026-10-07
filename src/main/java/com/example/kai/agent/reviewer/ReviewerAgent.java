@@ -3,8 +3,9 @@ package com.example.kai.agent.reviewer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
+
+import com.example.kai.config.ModelProvider;
 
 // Agent 3 of 3. Called only by the Orchestrator, never by the user.
 // Checks the Editor's result for one file. Its note is advice shown next to the proposal.
@@ -27,10 +28,11 @@ public class ReviewerAgent {
 	public record Review(boolean ok, String note) {
 	}
 
-	private final ChatClient chatClient;
+	private final ModelProvider models;
 
-	public ReviewerAgent(ChatClient.Builder builder) {
-		this.chatClient = builder.defaultSystem(SYSTEM).build();
+	// Asked on every call, so a model chosen on the start page is used at once
+	public ReviewerAgent(ModelProvider models) {
+		this.models = models;
 	}
 
 	public Review review(String instruction, String file, String original, String proposed) {
@@ -40,7 +42,7 @@ public class ReviewerAgent {
 				+ "\n<original>\n" + original + "\n</original>"
 				+ "\n<proposed>\n" + proposed + "\n</proposed>";
 
-		Review review = chatClient.prompt()
+		Review review = models.client(SYSTEM).prompt()
 				.user(user)
 				.call()
 				.entity(Review.class, spec -> spec.validateSchema());

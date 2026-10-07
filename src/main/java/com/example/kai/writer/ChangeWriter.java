@@ -17,7 +17,7 @@ import org.thymeleaf.context.Context;
 
 import org.springframework.stereotype.Component;
 
-import com.example.kai.config.KaiProperties;
+import com.example.kai.config.Setup;
 import com.example.kai.orchestrator.Finding;
 import com.example.kai.repository.DocumentRepository;
 
@@ -47,11 +47,11 @@ public class ChangeWriter {
 	}
 
 	private final ITemplateEngine templates;
-	private final KaiProperties properties;
+	private final Setup setup;
 
-	public ChangeWriter(ITemplateEngine templates, KaiProperties properties) {
+	public ChangeWriter(ITemplateEngine templates, Setup setup) {
 		this.templates = templates;
-		this.properties = properties;
+		this.setup = setup;
 	}
 
 	// Never throws: every problem becomes an Outcome the chat can show
@@ -79,7 +79,7 @@ public class ChangeWriter {
 		}
 
 		String run = LocalDateTime.now().format(RUN);
-		Path dir = properties.backupDir().resolve(run);
+		Path dir = setup.properties().backupDir().resolve(run);
 		List<Row> rows = selected.stream().map(f -> new Row(f, backupPath(dir, report, f).toString())).toList();
 
 		// 2. Report, 3. Backup. A failure here: nothing has been written yet

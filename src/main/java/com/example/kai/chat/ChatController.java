@@ -23,15 +23,16 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 
-import com.example.kai.config.KaiProperties;
+import com.example.kai.config.ModelProvider;
+import com.example.kai.config.Setup;
 import com.example.kai.orchestrator.Finding;
 import com.example.kai.orchestrator.Orchestrator;
 import com.example.kai.orchestrator.Progress;
 import com.example.kai.orchestrator.Proposal;
 import com.example.kai.writer.ChangeWriter;
 
-// The only user-facing interface. Every message goes to the Orchestrator;
-// agents stay behind it and never talk to the user.
+// The chat: where users work. (StartController's start page comes first and only handles
+// settings.) Every message goes to the Orchestrator; agents stay behind it and never talk to the user.
 @Controller
 public class ChatController {
 
@@ -46,12 +47,14 @@ public class ChatController {
 	}
 
 	private final Orchestrator orchestrator;
-	private final KaiProperties properties;
+	private final Setup setup;
+	private final ModelProvider models;
 	private final ExecutorService jobs = Executors.newVirtualThreadPerTaskExecutor(); // background scans
 
-	public ChatController(Orchestrator orchestrator, KaiProperties properties) {
+	public ChatController(Orchestrator orchestrator, Setup setup, ModelProvider models) {
 		this.orchestrator = orchestrator;
-		this.properties = properties;
+		this.setup = setup;
+		this.models = models;
 	}
 
 	// A scan running in the background for one browser session; the page polls /progress
@@ -60,12 +63,16 @@ public class ChatController {
 
 	@GetMapping("/")
 	public String chat(HttpSession session, Model model) {
+		if (!started(session)) { // every browser session begins on the start page
+			return "redirect:/start";
+		}
 		collect(session);
 		Job job = (Job) session.getAttribute("job");
 		model.addAttribute("messages", history(session));
 		model.addAttribute("log", job == null ? null : job.progress().since(0)); // set = a scan is running
 		model.addAttribute("targets", orchestrator.targets());
-		model.addAttribute("backupDir", properties.backupDir().toString());
+		model.addAttribute("backupDir", setup.properties().backupDir().toString());
+		model.addAttribute("aiModel", models.settings().model());
 		return "chat"; // -> templates/chat.html
 	}
 
@@ -73,6 +80,9 @@ public class ChatController {
 	// One scan at a time per session.
 	@PostMapping("/chat")
 	public String send(@RequestParam String message, HttpSession session) {
+		if (!started(session)) {
+			return "redirect:/start";
+		}
 		collect(session);
 		if (session.getAttribute("job") == null) {
 			history(session).add(new Message("user", message, null));
@@ -128,7 +138,7 @@ public class ChatController {
 	@PostMapping("/save")
 	public String save(@RequestParam int report, @RequestParam Map<String, String> form, HttpSession session) {
 		Message m = reportMessage(history(session), report);
-		if (m != null && !m.applied()) {
+		if (m != null && !m.applied() && started(session)) {
 			save(m.report(), form);
 		}
 		return "redirect:/#report-" + report;
@@ -140,7 +150,7 @@ public class ChatController {
 	public String finalizeReport(@RequestParam int report, @RequestParam Map<String, String> form, HttpSession session) {
 		List<Message> history = history(session);
 		Message m = reportMessage(history, report);
-		if (m == null || m.applied()) {
+		if (m == null || m.applied() || !started(session)) {
 			return "redirect:/";
 		}
 		save(m.report(), form);
@@ -156,8 +166,11 @@ public class ChatController {
 	// The saved final report, so the chat can link to it (browsers block file:// links from a web page)
 	@GetMapping("/report/{run}")
 	public ResponseEntity<String> finalReport(@PathVariable String run) throws IOException {
-		Path file = properties.backupDir().resolve(run).resolve("report.html");
-		if (!run.matches("[0-9-]+") || !Files.isRegularFile(file)) { // digits only: no ../ tricks
+		if (!setup.ready() || !run.matches("[0-9-]+")) { // digits only: no ../ tricks
+			return ResponseEntity.notFound().build();
+		}
+		Path file = setup.properties().backupDir().resolve(run).resolve("report.html");
+		if (!Files.isRegularFile(file)) {
 			return ResponseEntity.notFound().build();
 		}
 		return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(Files.readString(file));
@@ -176,6 +189,13 @@ public class ChatController {
 
 	private static Message reportMessage(List<Message> history, int index) {
 		return index >= 0 && index < history.size() && history.get(index).report() != null ? history.get(index) : null;
+	}
+
+	// Set by the start page's Start Kai. Kai must also be set up (it always is once someone started).
+	static final String STARTED = "started";
+
+	private boolean started(HttpSession session) {
+		return session.getAttribute(STARTED) != null && setup.ready();
 	}
 
 	// Conversation is kept per browser session, so no database is needed

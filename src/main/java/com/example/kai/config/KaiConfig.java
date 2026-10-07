@@ -8,15 +8,17 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import com.example.kai.config.KaiProperties.Target;
 
-// Finds, reads and checks kai.properties BEFORE Spring starts, so a mistake gives a
-// plain-language message instead of a stack trace. Where the file is looked for:
+// Reads, checks and writes kai.properties. Nothing here stops Kai: problems are messages for the
+// start page, where the user fixes them. Where the file is looked for:
 //   1. --config=<path> program argument, if given (for developers)
 //   2. otherwise: the working directory (IntelliJ default: the project root)
 // Relative paths inside the file start from the file's own folder, not the working
@@ -24,12 +26,10 @@ import com.example.kai.config.KaiProperties.Target;
 public final class KaiConfig {
 
 	public static final String FILE = "kai.properties";
+	public static final String SCAN = "kai.scan.local";
+	public static final String BACKUP = "kai.backup-dir";
 
-	private static final Set<String> KEYS = Set.of("kai.backup-dir", "kai.scan.local", "kai.scan.box", "kai.scan.parallel");
-
-	// springFile: the copy of kai.properties that Spring reads (see load)
-	public record Loaded(Path file, Path springFile, KaiProperties properties) {
-	}
+	private static final Set<String> KEYS = Set.of(BACKUP, SCAN, "kai.scan.box", "kai.scan.parallel");
 
 	public static class Invalid extends Exception {
 
@@ -41,78 +41,149 @@ public final class KaiConfig {
 	private KaiConfig() {
 	}
 
-	public static Loaded load(String[] args) throws Invalid {
-		Path file = locate(args);
-		if (!Files.isRegularFile(file)) {
-			throw new Invalid("Kai could not find its settings file:\n  " + file + "\n\n"
-					+ "Pass --config=<path to kai.properties>, or run Kai from the folder that has it.");
+	public static Path locate(String[] args) {
+		for (String arg : args) {
+			if (arg.startsWith("--config=")) {
+				return Path.of(arg.substring("--config=".length())).toAbsolutePath().normalize();
+			}
 		}
-		// A \ is kept as typed, so Windows paths can be pasted as-is (C:\Team\Docs).
-		// Normal .properties files treat \ as an escape, so double every one before parsing.
-		// Spring gets the same doubled copy, else e.g. C:\\users would fail as a bad \\u escape.
-		Path springFile;
+		return Path.of(FILE).toAbsolutePath();
+	}
+
+	// The file's settings as typed. Empty if the file does not exist.
+	// A \ is kept as typed, so Windows paths can be pasted as-is (C:\Team\Docs).
+	// Normal .properties files treat \ as an escape, so every one is doubled before parsing.
+	public static Properties read(Path file) throws Invalid {
 		Properties p = new Properties();
+		if (!Files.isRegularFile(file)) {
+			return p;
+		}
 		try {
-			String text = Files.readString(file).replace("\\", "\\\\");
-			p.load(new StringReader(text));
-			springFile = Files.createTempFile("kai-", ".properties");
-			springFile.toFile().deleteOnExit();
-			Files.writeString(springFile, text);
+			p.load(new StringReader(Files.readString(file).replace("\\", "\\\\")));
+			return p;
 		}
 		catch (IOException | IllegalArgumentException e) {
-			throw new Invalid("Kai could not read its settings file:\n  " + file + "\n\n" + e.getMessage());
+			throw new Invalid("Kai could not read its settings file:\n  " + file + "\n" + e.getMessage());
 		}
+	}
+
+	// The copy of kai.properties that Spring reads (server.port etc.), with every \ doubled
+	// like in read(), else e.g. C:\\users would fail as a bad \\u escape. null = no usable file.
+	public static Path springCopy(Path file) {
+		try {
+			if (!Files.isRegularFile(file)) {
+				return null;
+			}
+			Path copy = Files.createTempFile("kai-", ".properties");
+			copy.toFile().deleteOnExit();
+			Files.writeString(copy, Files.readString(file).replace("\\", "\\\\"));
+			return copy;
+		}
+		catch (IOException e) {
+			return null; // the start page shows the read error
+		}
+	}
+
+	// Program arguments for Spring: also load the copy for the spring.* / server.* keys
+	// (additional-location: its keys override application.properties). --config stays, the start page reads it.
+	public static String[] springArgs(String[] args, Path springCopy) {
+		return springCopy == null ? args
+				: Stream.concat(Arrays.stream(args), Stream.of("--spring.config.additional-location=file:"
+						+ springCopy.toString().replace('\\', '/'))).toArray(String[]::new);
+	}
+
+	// One folder to scan: the value as typed, the full path, and what is wrong with it (null = fine)
+	public record FolderCheck(String entry, Path path, String problem) {
+	}
+
+	// The kai.* settings, checked field by field so the start page can show each problem next to
+	// its field. foldersProblem: about the list as a whole. general: lines only fixable in the file.
+	// properties: the checked result, null if anything is wrong.
+	public record Inspection(List<FolderCheck> folders, String foldersProblem, Path backupDir, String backupProblem,
+			List<String> general, KaiProperties properties) {
+
+		public boolean ok() {
+			return properties != null;
+		}
+
+		public String message() {
+			List<String> all = new ArrayList<>(general);
+			folders.stream().filter(f -> f.problem() != null).map(f -> f.entry() + ": " + f.problem()).forEach(all::add);
+			if (foldersProblem != null) {
+				all.add(foldersProblem);
+			}
+			if (backupProblem != null) {
+				all.add("Backup folder: " + backupProblem);
+			}
+			return String.join("\n", all);
+		}
+	}
+
+	public static KaiProperties check(Path file, Properties p, boolean create) throws Invalid {
+		Inspection r = inspect(file, p, create);
+		if (!r.ok()) {
+			throw new Invalid(r.message());
+		}
+		return r.properties();
+	}
+
+	// Checks the kai.* settings. create = make the backup folder (only on Start Kai)
+	public static Inspection inspect(Path file, Properties p, boolean create) {
 		Path home = file.getParent();
-		List<String> problems = new ArrayList<>();
+		List<String> general = new ArrayList<>();
 
 		// Typos like "kai.scan.locl" would otherwise be silently ignored
 		for (String key : new TreeSet<>(p.stringPropertyNames())) {
 			if (key.startsWith("kai.") && !KEYS.contains(key)) {
-				problems.add("Unknown setting \"" + key + "\". Check the spelling. Known settings: " + String.join(", ", new TreeSet<>(KEYS)));
+				general.add("kai.properties has an unknown setting \"" + key + "\". Check the spelling in the file. Known settings: "
+						+ String.join(", ", new TreeSet<>(KEYS)));
 			}
 		}
 
 		Path backupDir = null;
-		String backup = value(p, "kai.backup-dir");
+		String backupProblem = null;
+		String backup = value(p, BACKUP);
 		if (backup == null) {
-			problems.add("kai.backup-dir is missing. Add a line like:  kai.backup-dir=./kai-backups");
+			backupProblem = "Enter a backup folder, for example ~/kai-backups";
 		}
 		else {
 			backupDir = path(home, backup);
-			try {
-				Files.createDirectories(backupDir);
+			if (Files.exists(backupDir) && !Files.isDirectory(backupDir)) {
+				backupProblem = "This is a file, not a folder.";
 			}
-			catch (IOException e) {
-				problems.add("Kai cannot create the backup folder " + backupDir + " (" + e.getMessage() + ")");
+			else if (create) {
+				try {
+					Files.createDirectories(backupDir);
+				}
+				catch (IOException e) {
+					backupProblem = "Kai cannot create this folder (" + e.getMessage() + ")";
+				}
 			}
 		}
 
+		List<FolderCheck> folders = new ArrayList<>();
 		List<Target> targets = new ArrayList<>();
-		List<String> local = list(p, "kai.scan.local");
+		List<String> local = list(p, SCAN);
 		List<String> box = list(p, "kai.scan.box");
 		for (String folder : local) {
 			Path dir = path(home, folder);
-			if (Files.isDirectory(dir)) {
+			String problem = Files.isDirectory(dir) ? null : Files.exists(dir) ? "This is a file, not a folder." : "Folder not found.";
+			folders.add(new FolderCheck(folder, dir, problem));
+			if (problem == null) {
 				targets.add(new Target("local", dir.toString(), folder));
-			}
-			else {
-				problems.add("Folder to scan not found: " + dir);
 			}
 		}
 		// Else backups would be scanned (and edited) as if they were documents
 		for (Target t : targets) {
-			if (backupDir != null && backupDir.startsWith(Path.of(t.location()))) {
-				problems.add("The backup folder " + backupDir + " is inside a folder Kai scans (" + t.entry()
-						+ "). Choose a backup folder outside it, e.g.  kai.backup-dir=~/kai-backups");
+			if (backupProblem == null && backupDir != null && backupDir.startsWith(Path.of(t.location()))) {
+				backupProblem = "This is inside a folder Kai scans (" + t.entry() + "). Choose a folder outside it, for example ~/kai-backups";
 			}
 		}
 		if (!box.isEmpty()) {
 			// Placeholder: the Box adapter is not built yet
-			problems.add("kai.scan.box: Box folders are not supported yet. Put a # in front of that line.");
+			general.add("kai.scan.box: Box folders are not supported yet. Put a # in front of that line in kai.properties.");
 		}
-		if (local.isEmpty() && box.isEmpty()) {
-			problems.add("Nothing to scan. Add at least one folder, for example:  kai.scan.local=./docs");
-		}
+		String foldersProblem = local.isEmpty() && box.isEmpty() ? "Add at least one folder to scan." : null;
 
 		int parallel = 4;
 		String par = value(p, "kai.scan.parallel");
@@ -124,25 +195,46 @@ public final class KaiConfig {
 				parallel = 0;
 			}
 			if (parallel < 1) {
-				problems.add("kai.scan.parallel must be a whole number of 1 or more, but is \"" + par + "\"");
+				general.add("kai.scan.parallel in kai.properties must be a whole number of 1 or more, but is \"" + par + "\"");
 			}
 		}
 
-		if (!problems.isEmpty()) {
-			throw new Invalid("Kai's settings file has a problem:\n  " + file + "\n\n  - " + String.join("\n  - ", problems));
+		boolean ok = general.isEmpty() && foldersProblem == null && backupProblem == null
+				&& folders.stream().allMatch(f -> f.problem() == null);
+		return new Inspection(List.copyOf(folders), foldersProblem, backupDir, backupProblem, List.copyOf(general),
+				ok ? new KaiProperties(backupDir, List.copyOf(targets), parallel) : null);
+	}
+
+	// Replace the lines for these keys (comments and every other line stay as they are); add any
+	// that are missing. Creates the file if it does not exist. Values are written as typed:
+	// read() takes a \ literally.
+	public static void write(Path file, Map<String, String> values) throws IOException {
+		String text = Files.exists(file) ? Files.readString(file)
+				: "# Kai settings. Written by Kai's start page; you can also edit it by hand.\n";
+		String nl = text.contains("\r\n") ? "\r\n" : "\n";
+		List<String> lines = new ArrayList<>(List.of(text.split("\r?\n", -1)));
+		if (lines.getLast().isEmpty()) {
+			lines.removeLast(); // the final newline; added back below
 		}
-		return new Loaded(file, springFile, new KaiProperties(backupDir, List.copyOf(targets), parallel));
+		for (var v : values.entrySet()) {
+			String line = v.getKey() + "=" + v.getValue().replaceAll("[\r\n]", " ").trim();
+			Pattern key = Pattern.compile("^\\s*" + Pattern.quote(v.getKey()) + "\\s*[=:].*");
+			boolean found = false;
+			for (int i = 0; i < lines.size(); i++) {
+				if (key.matcher(lines.get(i)).matches()) {
+					lines.set(i, line);
+					found = true;
+				}
+			}
+			if (!found) {
+				lines.add(line);
+			}
+		}
+		Files.writeString(file, String.join(nl, lines) + nl);
 	}
 
-	// Program arguments for Spring: drop --config, and load the same file for the spring.* keys
-	// (additional-location: its keys override application.properties)
-	public static String[] springArgs(String[] args, Path file) {
-		return Stream.concat(Arrays.stream(args).filter(a -> !a.startsWith("--config=")),
-				Stream.of("--spring.config.additional-location=file:" + file.toString().replace('\\', '/')))
-				.toArray(String[]::new);
-	}
-
-	// Print the reason and stop. In a real terminal (not the IDE console), wait for Enter first
+	// Print the reason and stop. Only used when Spring itself cannot start (e.g. port in use):
+	// settings problems never stop Kai, the start page shows them. In a real terminal (not the IDE console), wait for Enter first
 	// so the message stays on screen if the window would otherwise close.
 	public static void exit(String message) {
 		System.err.println();
@@ -154,15 +246,6 @@ public final class KaiConfig {
 			console.readLine();
 		}
 		System.exit(1);
-	}
-
-	private static Path locate(String[] args) {
-		for (String arg : args) {
-			if (arg.startsWith("--config=")) {
-				return Path.of(arg.substring("--config=".length())).toAbsolutePath().normalize();
-			}
-		}
-		return Path.of(FILE).toAbsolutePath();
 	}
 
 	private static Path path(Path home, String value) {
@@ -177,9 +260,12 @@ public final class KaiConfig {
 		return v == null || v.isBlank() ? null : v.trim();
 	}
 
-	// "a, b ,c" -> [a, b, c]; several folders on one line, separated by commas
 	private static List<String> list(Properties p, String key) {
-		String v = value(p, key);
+		return split(value(p, key));
+	}
+
+	// In the file, several folders go on one line, separated by commas: "a, b ,c" -> [a, b, c]
+	public static List<String> split(String v) {
 		return v == null ? List.of() : Arrays.stream(v.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
 	}
 }

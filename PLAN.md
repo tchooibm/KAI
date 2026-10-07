@@ -20,7 +20,8 @@ edits live in the HTTP session.
 ## Architecture
 
 ```
-ChatController (UI: /)  ── the ONLY thing users interact with
+StartController (/start)  ── start page, first in every browser session: settings only
+ChatController (UI: /)  ── where users work; agents never have a UI
       │
       ▼
 Orchestrator  ── plain Java, decides the order and passes results between agents.
@@ -49,7 +50,7 @@ Spring injects all of them into the Orchestrator; each `kai.scan.<type>` key in 
 ```
 src/main/java/com/example/kai/
 ├── KaiApplication.java
-├── chat/          ChatController: the single user interface (/ and /chat)
+├── chat/          StartController: start page (/start, settings); ChatController: the chat (/ and /chat)
 ├── orchestrator/  Orchestrator, Finding (+ Report), Proposal, Patch (applies edits), Diff (line diff)
 ├── agent/
 │   ├── scanner/   ScannerAgent: stage 1 stub, stage 2 LLM
@@ -57,8 +58,9 @@ src/main/java/com/example/kai/
 │   └── reviewer/  ReviewerAgent: ok + note on the edited result
 ├── repository/    DocumentRepository + all adapters (LocalFileRepository; later SharePoint, OneDrive)
 ├── writer/        ChangeWriter: stale check, report, backup, write, rollback
-└── config/        KaiConfig: finds + checks kai.properties before Spring starts; KaiProperties: the result
-src/main/resources/templates/chat.html
+└── config/        KaiConfig: finds, reads, checks, writes kai.properties; KaiProperties: checked kai.* values;
+                   Setup: holds them, start-page logic; ModelProvider: the AI connection
+src/main/resources/templates/start.html, chat.html
 kai.properties     user settings; lives next to kai.jar (or project root in the IDE)
 README.md          how to run (users first, developers at the bottom)
 sampleDocs/        10 cloud-onboarding test documents (git-ignored)
@@ -97,9 +99,11 @@ scanner doesn't flag a file just for naming a related topic.
 
 ## Configuration
 
-`kai.properties` is required and is checked before Spring starts (`KaiConfig`); any problem
-is listed in plain words and the app exits. Where it is looked for: `--config=<path>` →
-`./kai.properties` in the working directory. Relative paths start from
+`kai.properties` never stops Kai. Every browser session opens on the **start page**, which reads
+the file fresh (blank fields if it is missing), checks each setting as the user edits it (with
+each problem under its field), always lists the models from the AI service, and saves working
+values back on **Start Kai** (creating the file if needed). Where it is looked for:
+`--config=<path>` → `./kai.properties` in the working directory. Relative paths start from
 the file's folder. Full rules and run instructions: `README.md`.
 
 | Key | Default | Purpose |
@@ -108,11 +112,12 @@ the file's folder. Full rules and run instructions: `README.md`.
 | `kai.scan.box` | | Box **file** shared links, comma-separated (stage 2b). Folder links need an API token: not supported yet |
 | `kai.scan.parallel` | `4` | Files checked at the same time. Lower it on 429 rate-limit errors. Must be ≥ 1 |
 | `kai.backup-dir` | **required** | Where originals are backed up before writing. Created if missing. Must not be inside a scanned folder |
-| `spring.ai.openai.*`, `server.port`, … | from application.properties | Any Spring Boot / Spring AI key |
+| `spring.ai.openai.api-key`, `.base-url`, `.chat.model` | | The AI connection (OpenAI-compatible); set on the start page |
+| `server.port`, other `spring.*` | from application.properties | Any Spring Boot key |
 
 Unknown `kai.*` keys are errors, so typos don't get silently ignored.
 
-Build: `./mvnw package` → `target/kai-0.0.1-SNAPSHOT.jar`.
+Build: `./mvnw package` → `packaging/build/kai-0.0.1-SNAPSHOT.jar`.
 
 ## Stages (review each before moving on)
 
