@@ -51,7 +51,7 @@ runtime") to run. Option **B** is Kai on its own, so you have to install Java fi
 double-click it. Option A is bigger, but there is nothing to install and nothing to type.
 
 In both cases `kai.properties` is Kai's settings file. It tells Kai which folders to check
-and where to keep backups. It must be in the **same folder** as the program.
+and where to keep the history of changes. It must be in the **same folder** as the program.
 
 ## 1. Put Kai in a folder
 
@@ -71,7 +71,7 @@ and you do not want that uploaded.
 ## 2. Set up kai.properties
 
 **You can skip this step.** Kai's **start page** (the first page in the browser) shows the
-folders, the backup folder and the AI connection from `kai.properties` (empty fields if there is
+folders, the history folder and the AI connection from `kai.properties` (empty fields if there is
 nothing yet), checks each one as you fill it in, and lists the AI models. When everything works,
 click **Start Kai**: Kai saves the values into `kai.properties`. This section is for editing the
 file by hand instead.
@@ -96,7 +96,7 @@ The settings, in the order you find them in the file:
 |---|---|
 | `kai.scan.local` | **Required.** The folder or folders with your documents. Kai also checks every folder inside them. Separate several folders with commas: `kai.scan.local=~/Documents/Runbooks, C:\Team\Docs`. (On the start page each folder has its own field: **+ Add folder**.) Box Drive folders work like any other folder, for example `~/Library/CloudStorage/Box-Box/Team Docs` on a Mac. Files that are only in the cloud and not downloaded are skipped |
 | `# kai.scan.box` | Leave it as it is, with the `#`. Box web links are not supported yet |
-| `kai.backup-dir` | **Required.** Where Kai keeps the original files and a report of every change. Kai creates it. It must **not** be inside a folder you check, for example `kai.backup-dir=~/kai-backups` |
+| `kai.backup-dir` | **Required.** The **history folder**: one folder per Finalize with its `Report.html` and `Original files`, plus `History.html` listing them all. Kai creates it. It must **not** be inside a folder you check, for example `kai.backup-dir=~/kai-backups` |
 | `kai.scan.parallel` | How many files Kai checks at the same time. Leave it at `4`. Lower it to `2` or `1` if you see "429" or "rate limit" |
 | `spring.ai.openai.…` | The AI connection: key, address and model. **Your Kai admin tells you what to put here.** You can also type them on the start page, which tests them, lists the models, and saves working values into these lines. Keep the key private, like a password. `${...}` means "take the value from this computer's settings"; if your admin did not set that up, replace the whole `${...}` with the value |
 | `# server.port=8080` | Only if Kai says the port is in use: remove the `#` and change `8080` to another number, such as `8090` |
@@ -144,7 +144,7 @@ Keep this window open while you use Kai. Close it to stop Kai.
 
 Open **http://localhost:8080** in your browser (Chrome, Edge, Safari, …). You always see the
 **start page** first. If your settings already work, it shows a short **Ready to scan** summary
-(folders with their number of documents, backup folder, AI model): click **Start Kai**. Otherwise
+(folders with their number of documents, history folder, AI model): click **Start Kai**. Otherwise
 it shows the settings with each problem under its field. Kai checks a field when you leave it
 (or press Enter). **Start Kai** is greyed out until everything works. Click **Edit settings** on
 the summary, or **Change settings** next to *AI model* on the Kai page, to change them later.
@@ -194,12 +194,32 @@ When you are happy, click **Finalize** and confirm. Kai then:
 
 1. Checks that no file changed since the scan. If one did, Kai writes nothing and asks you
    to scan again, so it never overwrites someone else's newer work.
-2. Saves a report of every change (before and after) and backs up the original files,
-   both in your backup folder.
+2. Saves a report of every change (before and after) and a copy of the original files, in
+   a new folder in your history folder (layout below).
 3. Changes the ticked files. If changing any file fails, Kai puts **all** of them back from
-   the backup and says **Rolled back**, so your files are exactly as before.
+   the copies and says **Rolled back**, so your files are exactly as before.
 
-The reply has an **Open the report** link.
+The reply has an **Open the report** link. Every report also stays reachable later: click
+**Past reports** at the top of the Kai page, look under **Recent changes** on an empty chat,
+or open **History.html** in your history folder, which works even when Kai is not running:
+
+```
+Kai history/                                  (your history folder)
+  History.html                                ← open this: every change, newest first
+  2026-10-08 14.35 We now require Java 21/    ← one folder per Finalize: date, time, request
+    Report.html                               ← before and after of every changed file
+    Original files/                           ← the files exactly as they were before
+      sampleDocs/app-onboarding-runbook.md
+```
+
+To get a file back by hand, copy it from **Original files**. Older changes, from before this
+layout, keep their folder names (for example `20261008-143512`) and are listed too.
+
+To start again with an empty page, click **New chat** at the top. Your settings stay as they
+are. If a report still has edits you have not written with **Finalize**, or changes found in an
+updated file are still waiting for **Scan other files**, Kai asks first, because a new chat
+discards them. Finalized reports are not affected: they stay in the history folder and under
+**Past reports**.
 
 ## If something goes wrong
 
@@ -213,8 +233,8 @@ save it, and reload the start page.
 |---|---|
 | *There is no settings file yet* | Normal the first time: fill in the fields, and **Start Kai** creates `kai.properties`. If you do have one, put it in the same folder as Kai (with option B, also start Kai from that folder) and check the name: Windows sometimes saves it as `kai.properties.txt` (File Explorer → **View** → **Show** → **File name extensions**) |
 | *Folder to scan not found* | Check the path. Copy it again from File Explorer or Finder |
-| *Backup folder is missing* | Type a backup folder, for example `~/kai-backups` |
-| *The backup folder … is inside a folder Kai scans* | Choose a backup folder outside your document folders, for example `~/kai-backups` |
+| *Enter a history folder* | Type a history folder, for example `~/Kai history` |
+| *This is inside a folder Kai scans* (history folder) | Choose a history folder outside your document folders, for example `~/Kai history` |
 | *Folders to scan: add at least one folder* | Type at least one folder |
 | *Box folders are not supported yet* (in kai.properties) | Put a `#` in front of the `kai.scan.box` line |
 | *Unknown setting* (in kai.properties) | A setting name is misspelled. Compare it with the list in the message |
@@ -237,10 +257,10 @@ save it, and reload the start page.
 ## Updating or removing Kai
 
 When you get a new version, replace only the program (`kai.exe`, `kai` or `kai.jar`). Keep
-your own `kai.properties` and your backup folder. Close Kai before you replace it. With
+your own `kai.properties` and your history folder. Close Kai before you replace it. With
 option A, the new version cleans up the old `.kai-runtime` files by itself.
 
-To remove Kai completely, delete the Kai folder. Keep your backup folder if it is somewhere
+To remove Kai completely, delete the Kai folder. Keep your history folder if it is somewhere
 else and you still need it.
 
 ---
@@ -256,7 +276,7 @@ user works in one chat page at `/`. Behind it, a plain-Java orchestrator runs th
 agents per file, plus an Extractor first when the user picked an updated file:
 
 ```
-StartController (/start)  ── settings: folders, backup folder, AI address/key/model
+StartController (/start)  ── settings: folders, history folder, AI address/key/model
 ChatController (UI at /)  ── where users work; agents never have a UI
       │
       ▼
@@ -268,7 +288,8 @@ Orchestrator  ── plain Java; fixed pool of kai.scan.parallel threads, one ta
       │
       ▼
 DocumentRepository (adapter: type / list / read / write)  ── LocalFileRepository today
-ChangeWriter ── stale check → report → byte backup → write → roll back all on failure
+ChangeWriter ── stale check → report → byte copy of originals → write → roll back all on failure
+History      ── the history folder: run folders, .kai-run.properties, History.html, /history
 ```
 
 Documents are read through Apache Tika (docx, pptx, pdf) or as plain text. Only text files
@@ -286,7 +307,7 @@ kai/
 ├── src/main/java/com/example/kai/
 │   ├── KaiApplication.java      main: starts Spring (with kai.properties if any), prints the URL
 │   ├── chat/                    StartController: the start page (/start + its JSON: /start/state, /folders, /ai, /proceed)
-│   │                            ChatController: the chat (/), scan job, /confirm, /progress, /save, /finalize, /report
+│   │                            ChatController: the chat (/), scan job, /confirm, /progress, /save, /finalize, /report, /new
 │   ├── orchestrator/            Orchestrator, Finding (+ Report, Source), Extraction, Proposal, Patch, Diff, Progress
 │   ├── agent/
 │   │   ├── extractor/           ExtractorAgent
@@ -294,7 +315,8 @@ kai/
 │   │   ├── editor/              EditorAgent
 │   │   └── reviewer/            ReviewerAgent
 │   ├── repository/              DocumentRepository + LocalFileRepository (Tika for Office/PDF)
-│   ├── writer/                  ChangeWriter: stale check, report, backup, write, rollback
+│   ├── writer/                  ChangeWriter: stale check, report, originals, write, rollback;
+│   │                            History: run folder names, summaries, History.html, listing
 │   └── config/                  KaiConfig (finds, reads, checks and writes kai.properties),
 │                                KaiProperties (checked kai.* values), Setup (holds them; start-page logic),
 │                                ModelProvider (the AI connection: lists models, tests, builds the client)
@@ -357,18 +379,18 @@ The start page (`StartController` → `Setup`). `start.html` is static; its scri
   `ready` is true if everything passes: the page then shows the **Ready to scan** summary
   instead of the form.
 - **`POST /start/folders`:** `KaiConfig.inspect` with the form's folders in place of the file's
-  (the backup folder is not created yet). The result is per field: each folder's full path,
+  (the history folder is not created yet). The result is per field: each folder's full path,
   problem, and document count (`LocalFileRepository.list`, the same listing the scan uses),
-  the backup folder's, a problem for the list as a whole, and `general` problems only fixable in
+  the history folder's, a problem for the list as a whole, and `general` problems only fixable in
   the file (unknown `kai.*` keys, `kai.scan.box`, `kai.scan.parallel`). Called when a folder or
-  backup field loses focus, on Enter, and when a row is added or removed.
+  history field loses focus, on Enter, and when a row is added or removed.
 - **`POST /start/ai`:** `GET <base-url>/models` with the key (a 404/405 or non-JSON answer
   means "type the model name"). Called when the address or key field loses focus. The model
   list always comes from the service: the dropdown holds only what it lists, and a model from
   `kai.properties` that it doesn't list is not preselected and is flagged under the field
   (`Setup.modelProblem`, mirrored in the page's script so picking a model needs no request).
 - **`POST /start/proceed`** (**Start Kai**, enabled only when the last checks all passed and
-  nothing was edited since): checks again (now creating the backup folder), lists the models
+  nothing was edited since): checks again (now creating the history folder), lists the models
   once more, builds an `OpenAiChatModel` and makes one tiny call with the chosen model (429
   counts as working), writes the fields that differ from the file (so a `${ICA_CODEX_KEY}`
   line stays as it is unless the key was changed; comments kept; the file is created if
@@ -380,7 +402,7 @@ The start page (`StartController` → `Setup`). `start.html` is static; its scri
 |---|---|---|
 | `kai.scan.local` | | Comma-separated folders; each must exist. Needed unless another target is set |
 | `kai.scan.box` | | Placeholder for a Box adapter; setting it is an error for now |
-| `kai.backup-dir` | **required** | Created on Start Kai if missing; must not be inside a scanned folder |
+| `kai.backup-dir` | **required** | The history folder. Created on Start Kai if missing; must not be inside a scanned folder |
 | `kai.scan.parallel` | `4` | Whole number, 1 or more (file only, not on the start page) |
 | any other `kai.*` | | Error: "Unknown setting" (catches typos) |
 | `spring.ai.openai.api-key`, `.base-url`, `.chat.model` | | The AI connection; read and written by the start page |
@@ -391,6 +413,26 @@ Spring AI's own auto-configured models are switched off in `application.properti
 (`spring.ai.model.*=none`). OpenAI-compatible services only, for now. A black-holed AI
 address can take a few minutes to fail on Start Kai (60 s timeout, SDK retries 3 times);
 listing models gives up after 10 s (connect) / 30 s (read).
+
+## The history folder (`kai.backup-dir`)
+
+`ChangeWriter` and `History` organise it for people; the layout is in Part 1, step 4.
+
+- **Run folder name:** `yyyy-MM-dd HH.mm ` + the request's first line, with `\ / : * ? " < > |`
+  and control characters removed, cut at a word near 40 characters, trailing dots and spaces
+  dropped (Windows). `" (2)"`, `" (3)"`… if the name is taken.
+- **`Original files/<scan folder name>/<file>`:** exact bytes, mirroring the scanned folders.
+  Two scan folders with the same name (case-insensitive) get `" (2)"`.
+- **`.kai-run.properties`:** `request`, `time`, `result`, `files`. Written as `UNFINISHED`
+  before anything is written, then `APPLIED`, `ROLLED_BACK`, `ROLLBACK_INCOMPLETE` or
+  `NOT_WRITTEN`. A plain properties file, so no JSON library is involved.
+- **`History.html`:** `templates/history.html`, rewritten after every Finalize (best effort;
+  the list can always be rebuilt from the run folders). The same template is served at
+  `/history` with links to `/report/<folder>`; on disk it links relatively. The empty chat
+  shows the newest five as **Recent changes**.
+- **Older folders** (`yyyyMMdd-HHmmss/report.html`, no summary) are listed by date only and
+  never moved. Folders that are not Kai runs are ignored.
+- **`GET /report/<folder>`** only serves a direct child of the history folder that is a run.
 
 ## Two ways to ship Kai
 

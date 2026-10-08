@@ -31,6 +31,7 @@ import com.example.kai.orchestrator.Orchestrator;
 import com.example.kai.orchestrator.Progress;
 import com.example.kai.orchestrator.Proposal;
 import com.example.kai.writer.ChangeWriter;
+import com.example.kai.writer.History;
 
 // The chat: where users work. (StartController's start page comes first and only handles
 // settings.) Every message goes to the Orchestrator; agents stay behind it and never talk to the user.
@@ -53,12 +54,14 @@ public class ChatController {
 	private final Orchestrator orchestrator;
 	private final Setup setup;
 	private final ModelProvider models;
+	private final History historyFolder; // finalized runs on disk (not the chat history)
 	private final ExecutorService jobs = Executors.newVirtualThreadPerTaskExecutor(); // background scans
 
-	public ChatController(Orchestrator orchestrator, Setup setup, ModelProvider models) {
+	public ChatController(Orchestrator orchestrator, Setup setup, ModelProvider models, History historyFolder) {
 		this.orchestrator = orchestrator;
 		this.setup = setup;
 		this.models = models;
+		this.historyFolder = historyFolder;
 	}
 
 	// A scan or extraction running in the background for one browser session; the page polls
@@ -83,7 +86,41 @@ public class ChatController {
 		model.addAttribute("folders", orchestrator.folders());
 		model.addAttribute("backupDir", setup.properties().backupDir().toString());
 		model.addAttribute("aiModel", models.settings().model());
+		model.addAttribute("unfinished", unfinished(history(session))); // New chat asks first if set
+		if (history(session).isEmpty()) { // empty chat: show the latest finalized changes
+			List<History.Run> runs = historyFolder.list(setup.properties().backupDir());
+			model.addAttribute("recent", runs.subList(0, Math.min(5, runs.size())));
+			model.addAttribute("older", Math.max(0, runs.size() - 5));
+		}
 		return "chat"; // -> templates/chat.html
+	}
+
+	// "New chat": clear the conversation and start again with the same settings. Refused while a
+	// scan runs, or its reply would land in the new chat. Finalized reports stay in the backup folder.
+	@PostMapping("/new")
+	public String newChat(HttpSession session) {
+		collect(session);
+		if (session.getAttribute("job") == null) {
+			session.removeAttribute("history");
+		}
+		return "redirect:/";
+	}
+
+	// What New chat would throw away, as a question for the browser's confirm box; null = nothing
+	private static String unfinished(List<Message> history) {
+		long edits = history.stream().filter(m -> m.report() != null && !m.applied() && m.report().readyCount() > 0).count();
+		long changes = history.stream().filter(m -> m.extraction() != null && !m.applied()).count();
+		if (edits == 0 && changes == 0) {
+			return null;
+		}
+		List<String> parts = new ArrayList<>();
+		if (edits > 0) {
+			parts.add(edits + (edits == 1 ? " report has" : " reports have") + " proposed edits that were not written to your files");
+		}
+		if (changes > 0) {
+			parts.add(changes + (changes == 1 ? " list of changes was" : " lists of changes were") + " not scanned yet");
+		}
+		return String.join(", and ", parts) + ". A new chat discards them. Start a new chat?";
 	}
 
 	// Starts the work and returns at once; the page shows the agents' progress until it's done.
@@ -215,21 +252,32 @@ public class ChatController {
 			history.set(report, new Message(m.sender(), m.text(), m.report(), null, true, null));
 		}
 		history.add(new Message(o.result() == ChangeWriter.Result.APPLIED ? "bot" : "error", o.message(), null, null, false,
-				o.run() == null ? null : "/report/" + o.run()));
+				o.run() == null ? null : History.appHref(o.run())));
 		return "redirect:/";
 	}
 
-	// The saved final report, so the chat can link to it (browsers block file:// links from a web page)
+	// A saved report, so the chat can link to it (browsers block file:// links from a web page).
+	// run = the run's folder name in the history folder; History refuses anything else.
 	@GetMapping("/report/{run}")
 	public ResponseEntity<String> finalReport(@PathVariable String run) throws IOException {
-		if (!setup.ready() || !run.matches("[0-9-]+")) { // digits only: no ../ tricks
-			return ResponseEntity.notFound().build();
-		}
-		Path file = setup.properties().backupDir().resolve(run).resolve("report.html");
-		if (!Files.isRegularFile(file)) {
+		Path file = setup.ready() ? historyFolder.report(setup.properties().backupDir(), run) : null;
+		if (file == null || !Files.isRegularFile(file)) {
 			return ResponseEntity.notFound().build();
 		}
 		return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(Files.readString(file));
+	}
+
+	// Every finalized change, newest first: the same page as History.html in the history folder
+	@GetMapping("/history")
+	public String pastReports(HttpSession session, Model model) {
+		if (!started(session)) {
+			return "redirect:/start";
+		}
+		Path dir = setup.properties().backupDir();
+		model.addAttribute("runs", historyFolder.list(dir));
+		model.addAttribute("app", true);
+		model.addAttribute("folder", dir.toString());
+		return "history"; // -> templates/history.html
 	}
 
 	private static void save(Finding.Report report, Map<String, String> form) {

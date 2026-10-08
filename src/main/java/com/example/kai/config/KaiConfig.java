@@ -113,7 +113,7 @@ public final class KaiConfig {
 				all.add(foldersProblem);
 			}
 			if (backupProblem != null) {
-				all.add("Backup folder: " + backupProblem);
+				all.add("History folder: " + backupProblem);
 			}
 			return String.join("\n", all);
 		}
@@ -127,7 +127,7 @@ public final class KaiConfig {
 		return r.properties();
 	}
 
-	// Checks the kai.* settings. create = make the backup folder (only on Start Kai)
+	// Checks the kai.* settings. create = make the history folder (kai.backup-dir; only on Start Kai)
 	public static Inspection inspect(Path file, Properties p, boolean create) {
 		Path home = file.getParent();
 		List<String> general = new ArrayList<>();
@@ -144,7 +144,7 @@ public final class KaiConfig {
 		String backupProblem = null;
 		String backup = value(p, BACKUP);
 		if (backup == null) {
-			backupProblem = "Enter a backup folder, for example ~/kai-backups";
+			backupProblem = "Enter a history folder, for example ~/Kai history";
 		}
 		else {
 			backupDir = path(home, backup);
@@ -173,10 +173,10 @@ public final class KaiConfig {
 				targets.add(new Target("local", dir.toString(), folder));
 			}
 		}
-		// Else backups would be scanned (and edited) as if they were documents
+		// Else the history (reports and original files) would be scanned and edited as if it were documents
 		for (Target t : targets) {
 			if (backupProblem == null && backupDir != null && backupDir.startsWith(Path.of(t.location()))) {
-				backupProblem = "This is inside a folder Kai scans (" + t.entry() + "). Choose a folder outside it, for example ~/kai-backups";
+				backupProblem = "This is inside a folder Kai scans (" + t.entry() + "). Choose a folder outside it, for example ~/Kai history";
 			}
 		}
 		if (!box.isEmpty()) {

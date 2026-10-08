@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 
 import com.example.kai.repository.DocumentRepository;
 
-// What the start page works with: the folders, the backup folder and the AI connection.
+// What the start page works with: the folders, the history folder (kai.backup-dir) and the AI connection.
 // Reads kai.properties fresh each time the page opens and checks each part separately, so the
 // page can show every result next to its field. On Start it writes the values back and
 // switches Kai to them. Until then Kai has no settings, and the chat sends the user here.
@@ -99,7 +99,7 @@ public class Setup {
 		return new State(f, folders, ai, modelProblem, null, folders.ok() && ai.ok() && modelProblem == null);
 	}
 
-	// The Documents part, for the folders and backup folder as typed
+	// The Documents part, for the folders and history folder as typed
 	public Folders folders(List<String> scan, String backup) {
 		Properties p;
 		try {

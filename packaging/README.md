@@ -14,7 +14,7 @@ You do not need to install anything. Kai brings everything it needs with it.
 | File | What it is |
 |---|---|
 | `kai.exe` (Windows) or `kai` (Mac) | The Kai program |
-| `kai.properties` | Kai's settings: which folders to check, where to keep backups, and the AI connection |
+| `kai.properties` | Kai's settings: which folders to check, where to keep the history of changes, and the AI connection |
 | `README.md` | This guide |
 
 Keep these files together in **one folder**. Kai looks for `kai.properties` next to itself.
@@ -35,7 +35,7 @@ a Box Drive, OneDrive or other synced folder, or `.kai-runtime` gets uploaded to
 ## 2. Set up kai.properties
 
 **You can skip this step.** When you open Kai in the browser, its **start page** shows the
-folders, the backup folder and the AI connection from `kai.properties` (empty fields if there is
+folders, the history folder and the AI connection from `kai.properties` (empty fields if there is
 nothing yet), checks each one as you fill it in, and shows any problem under its field. When
 everything works, click **Start Kai**. Kai saves the values into `kai.properties`.
 This section is for editing the file by hand instead.
@@ -76,15 +76,28 @@ Files that are only in the cloud and not downloaded to your computer are skipped
 
 Leave the `# kai.scan.box=…` line as it is (with the `#`). Box web links are not supported yet.
 
-### Backup folder (required)
+### History folder (required)
 
 ```
-kai.backup-dir=./kai-backups
+kai.backup-dir=~/Kai history
 ```
 
-Before Kai changes any file, it copies the original here, together with a report of every
-change. Kai creates the folder if it is not there yet. It must **not** be inside one of the
-folders you check, for example `kai.backup-dir=~/kai-backups`.
+Every time you click **Finalize**, Kai keeps a report of the change here, together with the
+original files from before it. Kai creates the folder if it is not there yet. It must **not**
+be inside one of the folders you check. (The setting is still called `backup-dir`.)
+
+```
+Kai history/                                  (your history folder)
+  History.html                                ← open this: every change, newest first
+  2026-10-08 14.35 We now require Java 21/    ← one folder per Finalize: date, time, request
+    Report.html                               ← before and after of every changed file
+    Original files/                           ← the files exactly as they were before
+      sampleDocs/app-onboarding-runbook.md
+```
+
+Open **History.html** to see every change, even when Kai is not running. To get a file back
+by hand, copy it from **Original files**. Older changes, from before this layout, keep their
+folder names (for example `20261008-143512`) and are listed in History.html too.
 
 ### Speed
 
@@ -158,7 +171,7 @@ Keep this window open while you use Kai. Close it to stop Kai.
 
 Open **http://localhost:8080** in your browser (Chrome, Edge, Safari, …). You always see the
 **start page** first. If your settings already work, it shows a short **Ready to scan** summary
-(your folders with their number of documents, the backup folder and the AI model): click
+(your folders with their number of documents, the history folder and the AI model): click
 **Start Kai**. Otherwise it shows the settings with each problem under its field. Kai checks a
 field when you leave it (or press Enter), and **Start Kai** stays greyed out until everything
 works. To change settings later, click **Edit settings** on the summary, or **Change settings**
@@ -208,12 +221,20 @@ When you are happy, click **Finalize** and confirm. Kai then:
 
 1. Checks that no file changed since the scan. If one did, Kai writes nothing and asks you to
    scan again, so it never overwrites someone else's newer work.
-2. Saves a report of every change (before and after) and backs up the original files, both in
-   your backup folder.
+2. Saves a report of every change (before and after) and a copy of the original files, in a
+   new folder in your history folder.
 3. Changes the ticked files. If changing any file fails, Kai puts **all** of them back from the
-   backup and says **Rolled back**, so your files are exactly as before.
+   copies and says **Rolled back**, so your files are exactly as before.
 
-The reply has an **Open the report** link.
+The reply has an **Open the report** link. Every report also stays reachable later: click
+**Past reports** at the top of the Kai page, look under **Recent changes** on an empty chat, or
+open **History.html** in your history folder.
+
+To start again with an empty page, click **New chat** at the top. Your settings stay as they
+are. If a report still has edits you have not written with **Finalize**, or changes found in an
+updated file are still waiting for **Scan other files**, Kai asks first, because a new chat
+discards them. Finalized reports are not affected: they stay in the history folder and under
+**Past reports**.
 
 ## If something goes wrong
 
@@ -227,8 +248,8 @@ in the file: fix it, save it, and reload the start page in the browser.
 |---|---|
 | *There is no settings file yet* | Normal the first time, or if `kai.properties` is not next to `kai.exe` / `kai`. Fill in the fields; **Start Kai** creates the file. If you do have one, check its name: Windows sometimes saves it as `kai.properties.txt` (in File Explorer turn on **View** → **Show** → **File name extensions**) |
 | *Folder to scan not found* | Check the path. Copy it again from File Explorer or Finder |
-| *Backup folder is missing* | Type a backup folder, for example `~/kai-backups` |
-| *The backup folder … is inside a folder Kai scans* | Choose a backup folder outside your document folders, for example `~/kai-backups` |
+| *Enter a history folder* | Type a history folder, for example `~/Kai history` |
+| *This is inside a folder Kai scans* (history folder) | Choose a history folder outside your document folders, for example `~/Kai history` |
 | *Folders to scan: add at least one folder* | Type at least one folder |
 | *Box folders are not supported yet* (in kai.properties) | Put a `#` in front of the `kai.scan.box` line |
 | *Unknown setting* (in kai.properties) | A setting name is misspelled. Compare it with the list in the message |
@@ -249,10 +270,10 @@ in the file: fix it, save it, and reload the start page in the browser.
 ## Updating Kai
 
 When you get a new version, replace only `kai.exe` / `kai`. Keep your own `kai.properties`
-and your backup folder.
+and your history folder.
 
 Close Kai before you replace it. The new version replaces its `.kai-runtime` folder by itself
 the first time it starts.
 
 To remove Kai completely, delete the Kai folder. That removes everything, including
-`.kai-runtime`. Keep your backup folder if it is somewhere else and you still need it.
+`.kai-runtime`. Keep your history folder if it is somewhere else and you still need it.

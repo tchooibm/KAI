@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Saved by ChangeWriter to <backup-dir>/<run>/report.html on Finalize. Self-contained: no links back to Kai. -->
+<!-- Saved by ChangeWriter to <history folder>/<run>/Report.html on Finalize. Self-contained: no links back to Kai. -->
 <html xmlns:th="http://www.thymeleaf.org" lang="en">
 <head>
     <meta charset="UTF-8">
@@ -35,7 +35,7 @@
 </head>
 <body>
 <h1>Kai change report</h1>
-<p class="meta" th:text="'Run ' + ${run} + ' · ' + ${rows.size()} + ' file(s) selected for writing'"></p>
+<p class="meta" th:text="${run} + ': ' + ${rows.size()} + (${rows.size() == 1} ? ' file' : ' files') + ' selected for writing. The originals are in the Original files folder next to this report.'"></p>
 <p class="meta" th:if="${report.source}" th:text="'Checked against the updated file ' + ${report.source.name()} + ' (not scanned)'"></p>
 <div class="request" th:text="${report.instruction}"></div>
 <p class="outcome" th:text="${outcome}"></p>
@@ -46,7 +46,7 @@
     <p th:text="'Why: ' + ${f.reason}"></p>
     <p th:classappend="${p.reviewOk() != null and p.reviewOk()} ? '' : 'warn'"
        th:text="(${p.reviewOk() == null} ? 'Not reviewed. ' : (${p.reviewOk()} ? 'Reviewer: looks right. ' : 'Reviewer: please check. ')) + ${p.review()} + (${p.edited()} ? ' (Edited by the user after the review.)' : '')"></p>
-    <p>Original backed up to <code th:text="${r.backup}"></code></p>
+    <p>Original kept in <code th:text="${r.backup}"></code></p>
     <div class="diff"><div th:each="l : ${p.diff()}" th:class="${l.kind}" th:text="${l.text}"></div></div>
 </section>
 

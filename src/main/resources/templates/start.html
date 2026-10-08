@@ -133,7 +133,7 @@
         <h2>Ready to scan</h2>
         <dl class="facts">
             <dt>Documents</dt><dd id="r-folders"></dd>
-            <dt>Backups</dt><dd id="r-backup"></dd>
+            <dt>History</dt><dd id="r-backup"></dd>
             <dt>AI model</dt><dd id="r-ai"></dd>
         </dl>
         <div class="actions">
@@ -163,10 +163,10 @@
                 <p class="hint">Kai also reads the folders inside. Relative paths start from the folder of kai.properties.</p>
             </div>
             <div class="field">
-                <label for="backup">Backup folder</label>
-                <input id="backup" autocomplete="off" placeholder="~/kai-backups">
+                <label for="backup">History folder</label>
+                <input id="backup" autocomplete="off" placeholder="~/Kai history">
                 <p class="status" id="s-backup" aria-live="polite"></p>
-                <p class="hint">Kai copies each file here before changing it. It must be outside the folders to scan.</p>
+                <p class="hint">Kai keeps a report of every change here, with the original files. It must be outside the folders to scan.</p>
             </div>
         </section>
 
@@ -364,7 +364,7 @@
         if (canStart()) {
             const n = docs.folders.reduce((sum, f) => sum + (f.documents || 0), 0);
             passed.textContent = "All settings work. Kai will scan " + plural(docs.folders.length, "folder")
-                + " (" + plural(n, "document") + "), keep backups in " + docs.backupPath + " and use "
+                + " (" + plural(n, "document") + "), keep its history in " + docs.backupPath + " and use "
                 + model() + " at " + ai.url + ". Start Kai tests this model, then saves the settings.";
         }
         why.textContent = starting || canStart() ? ""

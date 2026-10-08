@@ -28,7 +28,7 @@
         header, main, footer { width: 100%; max-width: 980px; margin: 0 auto; padding: 0 24px; }
         header { display: flex; align-items: flex-start; gap: 28px; flex-wrap: wrap; padding-top: 28px; padding-bottom: 16px; }
         h1 { margin: 0; font: 600 30px/1 Charter, "Iowan Old Style", Georgia, serif; letter-spacing: -0.01em; }
-        /* Settings at a glance: one chip per kai.scan.* entry (the comma-separated values), then the backup folder */
+        /* Settings at a glance: one chip per kai.scan.* entry (the comma-separated values), then the history folder */
         .where { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; font-size: 13px; flex: 1; min-width: 0; }
         .where dt { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
         .where dd { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
@@ -40,6 +40,9 @@
         .chip.plain { padding-left: 10px; }
         code, .file { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
         .where code { color: var(--ink); }
+        .new-chat button { font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--teal);
+                           background: var(--sheet); border: 1px solid var(--teal); border-radius: 8px; padding: 6px 14px; }
+        .new-chat button:disabled { opacity: .5; cursor: not-allowed; }
         .where a.change { color: var(--teal); font-size: 13px; font-weight: 500; align-self: center; }
 
         main { flex: 1; padding-bottom: 300px; }
@@ -53,6 +56,16 @@
             background: var(--sheet); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px;
         }
         .examples button:hover { border-color: var(--teal); }
+        .recent { margin-top: 36px; }
+        .recent h3 { font: 500 18px/1.3 Charter, "Iowan Old Style", Georgia, serif; margin: 0 0 8px; }
+        .recent ol { list-style: none; margin: 0 0 10px; padding: 0; }
+        .recent li { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
+        .recent li a { color: var(--teal); font-weight: 500; text-decoration: none; flex: 1 1 260px; min-width: 0; }
+        .recent li a:hover { text-decoration: underline; }
+        .recent li span { color: var(--muted); font-size: 13px; }
+        .recent .outcome.APPLIED { color: #1a7f37; }
+        .recent .outcome.ROLLBACK_INCOMPLETE, .recent .outcome.UNFINISHED { color: var(--error); font-weight: 600; }
+        .recent a.all { color: var(--teal); font-size: 13px; font-weight: 500; }
 
         .msg { margin: 18px 0; }
         .user { display: flex; justify-content: flex-end; }
@@ -189,11 +202,16 @@
                 <span class="type" th:text="${t.type}"></span><code th:text="${t.entry}"></code>
             </span>
         </dd>
-        <dt>Backups</dt>
-        <dd><span class="chip plain" th:title="${backupDir}"><code th:text="${backupDir}"></code></span></dd>
+        <dt>History</dt>
+        <dd><span class="chip plain" th:title="${backupDir}"><code th:text="${backupDir}"></code></span><a class="change" href="/history">Past reports</a></dd>
         <dt>AI model</dt>
         <dd><span class="chip plain"><code th:text="${aiModel}"></code></span><a class="change" href="/start">Change settings</a></dd>
     </dl>
+    <!-- Clears the conversation, keeps the settings. Asks first if anything unfinished would be lost -->
+    <form method="post" action="/new" class="new-chat" th:if="${!#lists.isEmpty(messages)}">
+        <button type="submit" th:disabled="${log != null}" th:attr="data-warn=${unfinished}"
+                th:title="${log != null} ? 'Wait until the scan has finished' : 'Clear this conversation. Settings stay as they are.'">New chat</button>
+    </form>
 </header>
 
 <main>
@@ -207,6 +225,18 @@
             <button type="button">Rename the product from Acme Portal to Kai Hub</button>
             <button type="button">We now require Java 21 instead of 17</button>
             <button type="button">Change the application port from 8080 to 9090</button>
+        </div>
+        <!-- The latest finalized changes, from the history folder, so they stay reachable after a new chat -->
+        <div class="recent" th:if="${recent != null and !#lists.isEmpty(recent)}">
+            <h3>Recent changes</h3>
+            <ol>
+                <li th:each="r : ${recent}">
+                    <a th:href="${r.appHref()}" target="_blank" th:text="${r.headline()}"></a>
+                    <span th:text="${r.when()}"></span>
+                    <span class="outcome" th:classappend="${r.result()}" th:text="${r.outcome()}"></span>
+                </li>
+            </ol>
+            <a class="all" href="/history" th:text="${older > 0} ? 'All past reports (' + ${older} + ' more)' : 'All past reports'">All past reports</a>
         </div>
     </section>
 
@@ -343,6 +373,11 @@
 </footer>
 
 <script>
+    // New chat: confirm only if it would discard unwritten edits or unscanned changes
+    document.querySelector('.new-chat')?.addEventListener('submit', e => {
+        const warn = e.target.querySelector('button').dataset.warn;
+        if (warn && !confirm(warn)) e.preventDefault();
+    });
     // Finalize writes files: ask once, then show progress
     document.querySelectorAll('button.finalize').forEach(b => b.addEventListener('click', e => {
         if (!confirm('Write every ticked file now? Kai backs up the originals first.')) {

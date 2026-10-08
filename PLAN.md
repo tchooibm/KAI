@@ -1,14 +1,14 @@
 # Kai — hackathon plan
 
 Input a change request → agents find affected files and propose edits → **you review
-and edit the proposals** → final HTML report → backup → write → auto-rollback on failure.
+and edit the proposals** → final HTML report → copy of the originals → write → auto-rollback on failure.
 
 ## Flow
 
 ```
 [Scan] ──> [Review & edit] ──> [Finalize] ──────────────────────────────┐
- agents     you: tick/untick     1. final report  <backup-dir>/<runId>/report.html
- propose    files, edit the      2. backup        <backup-dir>/<runId>/files/...
+ agents     you: tick/untick     1. final report  <history>/<run>/Report.html
+ propose    files, edit the      2. originals     <history>/<run>/Original files/<scan folder>/...
             proposed text,       3. write all selected files
             save as often as     4. any write fails -> restore ALL from backup
             you like             5. chat reply: Applied / Rolled back
@@ -38,7 +38,7 @@ DocumentRepository (adapter interface: type / list / read / write)
   └─ OneDriveRepository    Graph API                   (future)
 
 ChangeWriter ── report → backup → write → rollback-on-failure (no LLM)
-               backups are stored in <backup-dir> (from the config file), and it reads/writes
+               runs are kept in the history folder (kai.backup-dir), with History.html; it reads/writes
                only via DocumentRepository, so rollback works for any adapter
 ```
 
@@ -59,7 +59,7 @@ src/main/java/com/example/kai/
 │   ├── editor/    EditorAgent: passage edits (original -> replacement)
 │   └── reviewer/  ReviewerAgent: ok + note on the edited result
 ├── repository/    DocumentRepository + all adapters (LocalFileRepository; later SharePoint, OneDrive)
-├── writer/        ChangeWriter: stale check, report, backup, write, rollback
+├── writer/        ChangeWriter: stale check, report, originals, write, rollback; History: the history folder
 └── config/        KaiConfig: finds, reads, checks, writes kai.properties; KaiProperties: checked kai.* values;
                    Setup: holds them, start-page logic; ModelProvider: the AI connection
 src/main/resources/templates/start.html, chat.html
@@ -113,7 +113,7 @@ the file's folder. Full rules and run instructions: `README.md`.
 | `kai.scan.local` | | Folders to scan, comma-separated. Each must exist |
 | `kai.scan.box` | | Box **file** shared links, comma-separated (stage 2b). Folder links need an API token: not supported yet |
 | `kai.scan.parallel` | `4` | Files checked at the same time. Lower it on 429 rate-limit errors. Must be ≥ 1 |
-| `kai.backup-dir` | **required** | Where originals are backed up before writing. Created if missing. Must not be inside a scanned folder |
+| `kai.backup-dir` | **required** | The history folder: a folder per Finalize (`Report.html`, `Original files/`), plus `History.html`. Created if missing. Must not be inside a scanned folder |
 | `spring.ai.openai.api-key`, `.base-url`, `.chat.model` | | The AI connection (OpenAI-compatible); set on the start page |
 | `server.port`, other `spring.*` | from application.properties | Any Spring Boot key |
 
@@ -210,14 +210,15 @@ How stage 4 is built (2026-10-01):
   count. Browser confirm first. `ChatController` → `Orchestrator.apply` → `ChangeWriter.apply`.
 - Selected = ready proposal, ticked, and different from the original (`Finding.selected()`).
 - Order: stale check (current file text must equal the scanned original, else refuse ALL,
-  nothing written) → `report.html` (status "Not written yet") → byte backups via
-  `DocumentRepository.readBytes` to `<backup-dir>/<run>/files/<n>-<folder>/<file>` → write →
-  on the first failure, restore every selected file with `writeBytes`. The report is saved
-  again with the outcome. Run id = `yyyyMMdd-HHmmss`.
-- The chat reply links to `GET /report/<run>`, which serves the saved report (browsers block
+  nothing written) → `Report.html` (status "Not written yet") → byte copies via
+  `DocumentRepository.readBytes` to `<history>/<run>/Original files/<scan folder>/<file>` →
+  write → on the first failure, restore every selected file with `writeBytes`. The report is
+  saved again with the outcome. Run folder = `yyyy-MM-dd HH.mm <start of the request>` (was
+  `yyyyMMdd-HHmmss` before 2026-10-08); `.kai-run.properties` and `History.html` are updated last.
+- The chat reply links to `GET /report/<run folder>`, which serves the saved report (browsers block
   `file://` links from a web page). An applied report hides its buttons; after a rollback
   you can Finalize again.
-- `KaiConfig` rejects a backup folder inside a scanned folder, else backups would be scanned.
+- `KaiConfig` rejects a history folder inside a scanned folder, else reports and originals would be scanned.
 - Forced-failure test: deferred to stage 5's "simulate failure" checkbox (user, 2026-10-01).
 
 Live progress log (added after stage 4, 2026-10-01): `POST /chat` starts the scan on a virtual
