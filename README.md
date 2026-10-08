@@ -158,6 +158,13 @@ Type the change in the box at the bottom and click **Scan documents**. You can w
 sentence or paste release notes several paragraphs long. **Enter** starts a new line; only
 the button sends.
 
+**Already updated one document?** Pick it under **Updated file** above the box, type a short
+summary of what changed (for example "support email changed, Java now 21") and click **Find
+changes**. Kai reads that file and lists the changes it found, plus anything in your summary
+it could not find in the file. Fix the list if Kai got something wrong, then click **Scan
+other files**. Every other file is checked against that list, and the updated file itself is
+never changed. A summary is required: it tells Kai which changes matter.
+
 While Kai works, a live log shows what it is doing for each file. The results appear by
 themselves when the scan is done. You can refresh the page in the meantime. One scan runs
 at a time.
@@ -246,7 +253,7 @@ Kai is a Spring Boot 4.1 web app (Java 25, Thymeleaf, Spring AI 2.0.1 with the O
 module; `ModelProvider` builds the chat model in code, it is not auto-configured) that runs
 locally on the user's machine and talks to an OpenAI-compatible gateway. Each browser session opens on a start page (`/start`) for the settings, then the
 user works in one chat page at `/`. Behind it, a plain-Java orchestrator runs three LLM
-agents per file:
+agents per file, plus an Extractor first when the user picked an updated file:
 
 ```
 StartController (/start)  ── settings: folders, backup folder, AI address/key/model
@@ -254,6 +261,7 @@ ChatController (UI at /)  ── where users work; agents never have a UI
       │
       ▼
 Orchestrator  ── plain Java; fixed pool of kai.scan.parallel threads, one task per file
+  ├─ ExtractorAgent "What changed in the updated file?"      -> Changes(changes, notFound), user confirms
   ├─ ScannerAgent   "Is this file affected? why?"            -> Verdict(affected, reason)
   ├─ EditorAgent    "Which passages change, and to what?"    -> Edits[(original, replacement)]
   └─ ReviewerAgent  "Does the edit do only what was asked?"  -> Review(ok, note)
@@ -278,9 +286,10 @@ kai/
 ├── src/main/java/com/example/kai/
 │   ├── KaiApplication.java      main: starts Spring (with kai.properties if any), prints the URL
 │   ├── chat/                    StartController: the start page (/start + its JSON: /start/state, /folders, /ai, /proceed)
-│   │                            ChatController: the chat (/), scan job, /progress, /save, /finalize, /report
-│   ├── orchestrator/            Orchestrator, Finding (+ Report), Proposal, Patch, Diff, Progress
+│   │                            ChatController: the chat (/), scan job, /confirm, /progress, /save, /finalize, /report
+│   ├── orchestrator/            Orchestrator, Finding (+ Report, Source), Extraction, Proposal, Patch, Diff, Progress
 │   ├── agent/
+│   │   ├── extractor/           ExtractorAgent
 │   │   ├── scanner/             ScannerAgent
 │   │   ├── editor/              EditorAgent
 │   │   └── reviewer/            ReviewerAgent

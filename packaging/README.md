@@ -173,6 +173,13 @@ Type the change in the box at the bottom and click **Scan documents**. You can w
 sentence or paste release notes several paragraphs long. **Enter** starts a new line. Only
 the button sends.
 
+**Already updated one document?** Pick it under **Updated file** above the box, type a short
+summary of what changed (for example "support email changed, Java now 21") and click **Find
+changes**. Kai reads that file and lists the changes it found, plus anything in your summary
+it could not find in the file. Fix the list if Kai got something wrong, then click **Scan
+other files**. Every other file is checked against that list, and the updated file itself is
+never changed. A summary is required: it tells Kai which changes matter.
+
 While Kai works, a live log shows what it is doing for each file. The results appear by
 themselves when the scan is done. You can refresh the page in the meantime. One scan runs at a time.
 

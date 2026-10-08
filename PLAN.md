@@ -26,6 +26,7 @@ ChatController (UI: /)  ── where users work; agents never have a UI
       ▼
 Orchestrator  ── plain Java, decides the order and passes results between agents.
                  Agents have no UI and never talk to the user.
+  ├─ ExtractorAgent "What changed in the updated file?"      (optional, once, before the scan)
   ├─ ScannerAgent   "Is this file affected? why?"            (1 LLM call per file)
   ├─ EditorAgent    "Which passages change, and to what?"    (affected text files only)
   └─ ReviewerAgent  "Does the edit do only what was asked?"  (advice shown to you)
@@ -53,6 +54,7 @@ src/main/java/com/example/kai/
 ├── chat/          StartController: start page (/start, settings); ChatController: the chat (/ and /chat)
 ├── orchestrator/  Orchestrator, Finding (+ Report), Proposal, Patch (applies edits), Diff (line diff)
 ├── agent/
+│   ├── extractor/ ExtractorAgent: changes found in an updated file (stage 6)
 │   ├── scanner/   ScannerAgent: stage 1 stub, stage 2 LLM
 │   ├── editor/    EditorAgent: passage edits (original -> replacement)
 │   └── reviewer/  ReviewerAgent: ok + note on the edited result
@@ -129,6 +131,7 @@ Build: `./mvnw package` → `packaging/build/kai-0.0.1-SNAPSHOT.jar`.
 | 3 | EditorAgent + ReviewerAgent → **review in the chat**: the bot reply shows, per file: a **diff** of original vs proposed, an Edit toggle (editable textarea of the proposed text), include checkbox, reviewer note. "Save edits" button | Yes | You can change a proposal, save, reload, and still see your edit (diff updated). Editor + Reviewer run in parallel. Nothing is written to disk ✅ built |
 | 4 | **Finalize**: write final HTML report (before/after for each selected file) → back up originals → write → if any write fails, restore every file from the backup | No | Happy path: files changed and report saved. Forced failure: every file identical to before, and the chat says "Rolled back" ✅ built (forced-failure test deferred, see below) |
 | 4b | **docx/pptx write-back** (after stage 4, decided 2026-10-01): Apache POI, edits only inside one paragraph; anything else stays "Could not apply" / "Update by hand". PDF stays by hand | No (edits come from the Editor as now) | Sample docx/pptx edited, open in Word/PowerPoint without a repair prompt, rollback restores them byte-for-byte |
+| 6 | **Updated file as the change** (2026-10-08): pick the updated file + type a summary → ExtractorAgent lists the changes → user confirms/edits → scan other files (updated file skipped) | Yes | See "Stage 6" below ✅ built (uncompiled) |
 | 5 | Demo polish: "simulate failure" checkbox (fails on the last file) to show rollback live, agent log panel (✅ built early: live progress log), clearer errors | No | 2-minute demo runs cleanly |
 
 Stage 2b outcome (2026-10-01): **done through Box Drive, no Box code.** The hackathon has no
@@ -233,6 +236,24 @@ stage 4's backup should already provide. Estimate ~1 day (docx ~½ day, pptx +2�
 Stage 4 also detects **stale files**: if a file changed on disk after the scan,
 Finalize refuses to overwrite it, so your review can't silently clobber newer content.
 
+Stage 6: updated file as the change (built 2026-10-08, uncompiled):
+
+- **Why:** users often update one document first and want the rest to follow. There is no
+  old version to diff (no snapshots, by choice), so the user's summary says what matters.
+- **UI:** optional **Updated file** dropdown above the chat box (default "None", one group per
+  `kai.scan.*` location). Picked → the box is the summary (required), the button reads
+  **Find changes**. "None" → exactly the old flow.
+- **Flow:** `POST /chat` with `source=<location position>:<file>` → `Orchestrator.source` (only
+  files Kai would scan are accepted) → job runs `Orchestrator.extract` → `ExtractorAgent`
+  returns `Changes(changes, notFound)` → bot message with an editable list (one change per
+  line) and the not-found items as a warning. **Scan other files** (`POST /confirm`) makes
+  the edited list the change request (`Extraction.instruction`) and runs the normal
+  `scan(instruction, source, progress)`, which skips the updated file. Report and saved
+  report show "Checked against <file>".
+- **Why the pause:** the extracted list steers every proposed edit, so a misread is cheaper
+  to fix here than after the whole scan. One click.
+- Size: the updated file is read once, with the usual `LocalFileRepository` limits.
+
 ## Demo script (draft)
 
 1. *"Rename the product from Acme Portal to Kai Hub"*: easy, keyword-level.
@@ -240,4 +261,6 @@ Finalize refuses to overwrite it, so your review can't silently clobber newer co
    (in a PDF) and `temurin:17`, but skips the training deck that only says "Java".
 3. In review, hand-edit one proposal (e.g. change "Temurin" to "any JDK 21"), untick one file.
 4. Finalize → open the report → show files changed.
+4b. Updated file: edit the support email in `README.md` by hand, pick it under Updated file,
+   type "support email changed", confirm the list → the docx shows "Update by hand".
 5. Run again with "simulate failure" → show the chat says "Rolled back" and the files are unchanged.

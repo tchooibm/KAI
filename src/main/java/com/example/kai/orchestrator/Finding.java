@@ -29,8 +29,16 @@ public record Finding(Target target, String file, Status status, String reason, 
 		return affected() && !editable;
 	}
 
-	// The whole run, kept in the chat history
-	public record Report(String instruction, List<Target> targets, List<Finding> findings) {
+	// The updated file a change came from: never scanned or edited, it is the source of truth
+	public record Source(Target target, String file) {
+
+		public String name() {
+			return target.entry() + "/" + file;
+		}
+	}
+
+	// The whole run, kept in the chat history. source = the updated file it was checked against, or null
+	public record Report(String instruction, Source source, List<Target> targets, List<Finding> findings) {
 
 		// One kai.scan.* entry and its files, so the report shows the blast radius per location
 		public record Group(Target target, List<Finding> findings) {

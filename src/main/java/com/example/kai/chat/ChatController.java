@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import com.example.kai.config.ModelProvider;
 import com.example.kai.config.Setup;
+import com.example.kai.orchestrator.Extraction;
 import com.example.kai.orchestrator.Finding;
 import com.example.kai.orchestrator.Orchestrator;
 import com.example.kai.orchestrator.Progress;
@@ -36,13 +37,16 @@ import com.example.kai.writer.ChangeWriter;
 @Controller
 public class ChatController {
 
-	// report: set on bot replies that carry a scan result, otherwise null
-	// applied: the report was finalized successfully, so it can't be finalized again
-	// link:    "Open the report" address on Finalize replies, otherwise null
-	public record Message(String sender, String text, Finding.Report report, boolean applied, String link) {
+	// report:     set on bot replies that carry a scan result, otherwise null
+	// extraction: set on the "changes found in the updated file" reply, which waits for the user
+	//             to confirm; text = the changes in its box (as confirmed, once done)
+	// applied:    the report was finalized, or the extraction confirmed, so it can't be done again
+	// link:       "Open the report" address on Finalize replies, otherwise null
+	public record Message(String sender, String text, Finding.Report report, Extraction extraction, boolean applied,
+			String link) {
 
 		Message(String sender, String text, Finding.Report report) {
-			this(sender, text, report, false, null);
+			this(sender, text, report, null, false, null);
 		}
 	}
 
@@ -57,8 +61,13 @@ public class ChatController {
 		this.models = models;
 	}
 
-	// A scan running in the background for one browser session; the page polls /progress
-	record Job(Progress progress, CompletableFuture<Finding.Report> result) {
+	// A scan or extraction running in the background for one browser session; the page polls
+	// /progress. result = the bot's reply, added to the chat when done.
+	record Job(Progress progress, CompletableFuture<Message> result) {
+	}
+
+	private interface Step {
+		Message run(Progress progress) throws IOException;
 	}
 
 	@GetMapping("/")
@@ -71,33 +80,86 @@ public class ChatController {
 		model.addAttribute("messages", history(session));
 		model.addAttribute("log", job == null ? null : job.progress().since(0)); // set = a scan is running
 		model.addAttribute("targets", orchestrator.targets());
+		model.addAttribute("folders", orchestrator.folders());
 		model.addAttribute("backupDir", setup.properties().backupDir().toString());
 		model.addAttribute("aiModel", models.settings().model());
 		return "chat"; // -> templates/chat.html
 	}
 
-	// Starts the scan and returns at once; the page shows the agents' progress until it's done.
-	// One scan at a time per session.
+	// Starts the work and returns at once; the page shows the agents' progress until it's done.
+	// No updated file: message is the change request, scan at once.
+	// Updated file picked: message is the user's summary; the Extractor runs first and its
+	// changes wait in the chat for the user to confirm (POST /confirm), which starts the scan.
 	@PostMapping("/chat")
-	public String send(@RequestParam String message, HttpSession session) {
+	public String send(@RequestParam String message, @RequestParam(defaultValue = "") String source, HttpSession session) {
 		if (!started(session)) {
 			return "redirect:/start";
 		}
 		collect(session);
-		if (session.getAttribute("job") == null) {
-			history(session).add(new Message("user", message, null));
-			Progress progress = new Progress();
-			progress.add("Started");
-			session.setAttribute("job", new Job(progress, CompletableFuture.supplyAsync(() -> {
-				try {
-					return orchestrator.scan(message, progress);
-				}
-				catch (IOException e) {
-					throw new CompletionException(e);
-				}
-			}, jobs)));
+		if (session.getAttribute("job") != null || message.isBlank()) {
+			return "redirect:/";
 		}
+		List<Message> history = history(session);
+		if (source.isEmpty()) {
+			history.add(new Message("user", message, null));
+			start(session, p -> reply(orchestrator.scan(message, null, p)));
+			return "redirect:/";
+		}
+		Finding.Source s;
+		try {
+			s = orchestrator.source(source);
+		}
+		catch (IOException e) {
+			history.add(new Message("error", e.getMessage(), null));
+			return "redirect:/";
+		}
+		history.add(new Message("user", "Updated file: " + s.name() + "\n" + message, null));
+		start(session, p -> {
+			Extraction x = orchestrator.extract(message, s, p);
+			return new Message("bot", x.text(), null, x, false, null);
+		});
 		return "redirect:/";
+	}
+
+	// "Scan other files" on the changes found in an updated file: the box text, maybe edited,
+	// becomes the change request. The updated file itself is skipped.
+	@PostMapping("/confirm")
+	public String confirm(@RequestParam int index, @RequestParam String changes, HttpSession session) {
+		if (!started(session)) {
+			return "redirect:/start";
+		}
+		collect(session);
+		List<Message> history = history(session);
+		Message m = index >= 0 && index < history.size() ? history.get(index) : null;
+		if (m == null || m.extraction() == null || m.applied() || changes.isBlank() || session.getAttribute("job") != null) {
+			return "redirect:/";
+		}
+		Extraction x = m.extraction();
+		history.set(index, new Message(m.sender(), changes.strip(), null, x, true, null));
+		start(session, p -> reply(orchestrator.scan(x.instruction(changes), x.source(), p)));
+		return "redirect:/";
+	}
+
+	private void start(HttpSession session, Step step) {
+		Progress progress = new Progress();
+		progress.add("Started");
+		session.setAttribute("job", new Job(progress, CompletableFuture.supplyAsync(() -> {
+			try {
+				return step.run(progress);
+			}
+			catch (IOException e) {
+				throw new CompletionException(e);
+			}
+		}, jobs)));
+	}
+
+	private static Message reply(Finding.Report report) {
+		String summary = report.affectedCount() + " of " + report.findings().size() + " files affected"
+				+ (report.readyCount() > 0 ? ". " + report.readyCount() + " proposed edits to review below" : "")
+				+ (report.unappliedCount() > 0 ? ". " + report.unappliedCount() + " could not be edited automatically" : "")
+				+ (report.manualCount() > 0 ? ". " + report.manualCount() + " need a manual update (docx/pptx/pdf)" : "")
+				+ (report.errorCount() > 0 ? " (" + report.errorCount() + " could not be checked, see Error rows)" : "");
+		return new Message("bot", summary, report);
 	}
 
 	// New log lines since index `since`; done = reload the page to see the report
@@ -109,7 +171,7 @@ public class ChatController {
 				: Map.of("lines", job.progress().since(since), "done", job.result().isDone());
 	}
 
-	// A finished scan becomes the bot's chat message. Only request threads touch the history.
+	// A finished job becomes the bot's chat message. Only request threads touch the history.
 	private synchronized void collect(HttpSession session) {
 		Job job = (Job) session.getAttribute("job");
 		if (job == null || !job.result().isDone()) {
@@ -117,13 +179,7 @@ public class ChatController {
 		}
 		session.removeAttribute("job");
 		try {
-			Finding.Report report = job.result().join();
-			String summary = report.affectedCount() + " of " + report.findings().size() + " files affected"
-					+ (report.readyCount() > 0 ? ". " + report.readyCount() + " proposed edits to review below" : "")
-					+ (report.unappliedCount() > 0 ? ". " + report.unappliedCount() + " could not be edited automatically" : "")
-					+ (report.manualCount() > 0 ? ". " + report.manualCount() + " need a manual update (docx/pptx/pdf)" : "")
-					+ (report.errorCount() > 0 ? " (" + report.errorCount() + " could not be checked, see Error rows)" : "");
-			history(session).add(new Message("bot", summary, report));
+			history(session).add(job.result().join());
 		}
 		catch (CompletionException e) {
 			// e.g. folder missing: show it in the chat instead of an error page
@@ -156,9 +212,9 @@ public class ChatController {
 		save(m.report(), form);
 		ChangeWriter.Outcome o = orchestrator.apply(m.report());
 		if (o.result() == ChangeWriter.Result.APPLIED) {
-			history.set(report, new Message(m.sender(), m.text(), m.report(), true, null));
+			history.set(report, new Message(m.sender(), m.text(), m.report(), null, true, null));
 		}
-		history.add(new Message(o.result() == ChangeWriter.Result.APPLIED ? "bot" : "error", o.message(), null, false,
+		history.add(new Message(o.result() == ChangeWriter.Result.APPLIED ? "bot" : "error", o.message(), null, null, false,
 				o.run() == null ? null : "/report/" + o.run()));
 		return "redirect:/";
 	}
