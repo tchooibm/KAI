@@ -8,7 +8,7 @@
 # ---------------------------------------------------------------- Folders to scan (at least one)
 # Your own computer or a shared drive. Several folders: separate with commas, e.g.
 #   kai.scan.local=./docs, ~/Documents/Runbooks, C:\Team\Docs
-kai.scan.local=./sampleDocs, /Users/tchoo/Library/CloudStorage/Box-Box/kaitest
+kai.scan.local=./docs
 
 # Box folder, by its web address. Not available yet: leave the # in front.
 # kai.scan.box=https://box.example.com/folder/123456
@@ -17,7 +17,7 @@ kai.scan.local=./sampleDocs, /Users/tchoo/Library/CloudStorage/Box-Box/kaitest
 # Where Kai keeps a report of every change, with the original files from before it.
 # One folder per change; open History.html in it to see them all. Created if missing.
 # Must not be inside a folder to scan. (The setting keeps its old name, backup-dir.)
-kai.backup-dir=./kai-backups
+kai.backup-dir=~/Kai history
 
 # ---------------------------------------------------------------- Speed
 # How many files are checked at the same time. Lower it if you see "429" or

@@ -44,4 +44,5 @@ sampleDocs/
 ### Packaging ###
 packaging/dist/
 packaging/build/
+packaging/jre/
 packaging/launcher/payload.tar.gz

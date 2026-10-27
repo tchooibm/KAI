@@ -63,7 +63,8 @@ src/main/java/com/example/kai/
 └── config/        KaiConfig: finds, reads, checks, writes kai.properties; KaiProperties: checked kai.* values;
                    Setup: holds them, start-page logic; ModelProvider: the AI connection
 src/main/resources/templates/start.html, chat.html
-kai.properties     user settings; lives next to kai.jar (or project root in the IDE)
+kai.properties.template  settings template (version controlled); copied to kai.properties for dev and packaging
+kai.properties     user settings, not version controlled; lives next to kai.jar (or project root in the IDE)
 README.md          how to run (users first, developers at the bottom)
 sampleDocs/        10 cloud-onboarding test documents (git-ignored)
 ```
@@ -119,7 +120,7 @@ the file's folder. Full rules and run instructions: `README.md`.
 
 Unknown `kai.*` keys are errors, so typos don't get silently ignored.
 
-Build: `./mvnw package` → `packaging/build/kai-0.0.1-SNAPSHOT.jar`.
+Build: `./mvnw package` → `target/kai-0.0.1-SNAPSHOT.jar`; `packaging/build.sh` runs it and builds the packages.
 
 ## Stages (review each before moving on)
 

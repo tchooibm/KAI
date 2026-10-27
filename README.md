@@ -40,7 +40,7 @@ The only difference is what you need on your computer and how you start it.
 | | **A. Kai program** (recommended) | **B. Kai jar** |
 |---|---|---|
 | What you get | `kai.exe` (Windows) or `kai` (Mac), plus `kai.properties` | `kai.jar`, plus `kai.properties` |
-| What you need to install | Nothing | Java 25 |
+| What you need to install | Nothing | Java 21 or newer |
 | How you start it | Double-click the program | Type one command in a terminal |
 | Size | About 200 MB | About 150 MB, plus Java |
 | Best for | Most people | People who already have Java, or use Linux |
@@ -122,8 +122,8 @@ Later starts are faster.
 
 ### Option B: the Kai jar
 
-1. Install **Java 25** if you do not have it yet (ask your admin, or download "Temurin 25"
-   from adoptium.net). To check, open a terminal and type `java -version`. It should say `25`.
+1. Install **Java 21 or newer** if you do not have it yet (ask your admin, or download "Temurin 21"
+   from adoptium.net). To check, open a terminal and type `java -version`. It should say `21` or higher.
 2. Open a terminal in the Kai folder. **Windows:** open the folder in File Explorer, click
    the address bar, type `cmd` and press Enter. **Mac:** right-click the folder in Finder →
    **New Terminal at Folder** (or open Terminal and type `cd ` followed by the folder path).
@@ -249,8 +249,8 @@ save it, and reload the start page.
 | *The AI service does not know this address or model* | Check the address and the model name with your Kai admin |
 | *Kai cannot reach the AI service* | Check that you are online, and on the company VPN if you need one |
 | *Kai could not start: unpacking Java failed* (option A) | Kai needs to write into its own folder. Move it somewhere you can save files, such as `Documents` (not `Program Files` or a read-only shared drive), and check that your disk is not full |
-| *java is not recognized* / *command not found: java* (option B) | Java is not installed. Install Java 25, or ask your admin for option A |
-| *UnsupportedClassVersionError* (option B) | Your Java is too old. Install Java 25 |
+| *java is not recognized* / *command not found: java* (option B) | Java is not installed. Install Java 21 or newer, or ask your admin for option A |
+| *UnsupportedClassVersionError* (option B) | Your Java is too old. Install Java 21 or newer |
 | *Kai could not start. The reason is shown above.* | Often "Port 8080 was already in use": Kai may already be running in another window. Use that one, or close it, or change `server.port` |
 | Many files show **Could not check** | If you see "429" or "rate limit", set `kai.scan.parallel=1`. Otherwise click **Change settings**: the start page tests the AI connection again |
 
@@ -269,7 +269,7 @@ else and you still need it.
 
 ## What it is
 
-Kai is a Spring Boot 4.1 web app (Java 25, Thymeleaf, Spring AI 2.0.1 with the OpenAI
+Kai is a Spring Boot 4.1 web app (Java 21, Thymeleaf, Spring AI 2.0.1 with the OpenAI
 module; `ModelProvider` builds the chat model in code, it is not auto-configured) that runs
 locally on the user's machine and talks to an OpenAI-compatible gateway. Each browser session opens on a start page (`/start`) for the settings, then the
 user works in one chat page at `/`. Behind it, a plain-Java orchestrator runs three LLM
@@ -301,8 +301,8 @@ match exactly once (`Patch`), so untouched parts of a file stay byte-identical. 
 
 ```
 kai/
-├── pom.xml                      Spring Boot 4.1.1, Spring AI 2.0.1, Tika 4.0.0; enforcer: JDK 25 only
-├── kai.properties               dev settings (scans ./sampleDocs); also the template shipped to users
+├── pom.xml                      Spring Boot 4.1.1, Spring AI 2.0.1, Tika 4.0.0; enforcer: JDK 21 or newer
+├── kai.properties.template      settings template: copy to kai.properties for dev; shipped to users as kai.properties
 ├── PLAN.md                      architecture, flow and stage plan
 ├── src/main/java/com/example/kai/
 │   ├── KaiApplication.java      main: starts Spring (with kai.properties if any), prints the URL
@@ -325,27 +325,39 @@ kai/
 │   └── templates/               start.html (start page), chat.html (the UI), final-report.html (saved report)
 ├── sampleDocs/                  demo documents (git-ignored)
 └── packaging/                   mechanism 2: one executable per OS
-    ├── build.sh                 builds dist/ from an input folder (jar + JREs + kai.properties + README)
+    ├── build.sh                 runs ./mvnw clean package, then builds dist/ (jar + jre/ + kai.properties + README)
     ├── launcher/main.go         Go launcher that embeds the Java runtime and kai.jar
     ├── README.md                user guide shipped inside the packages
-    ├── build/                   your build input folder (git-ignored)
+    ├── jre/                     winjre/ and macjre/, Java 21 runtimes (git-ignored)
     └── dist/                    output: windows/, macos/, kai-windows.zip, kai-macos.zip (git-ignored)
 ```
 
 ## Requirements
 
-- JDK 25. The build fails on any other version (enforcer rule in `pom.xml`).
+- JDK 21 or newer. The build fails on anything older (enforcer rule in `pom.xml`); the jar targets Java 21 whichever JDK builds it.
 - An OpenAI-compatible AI service: address and key, typed on the start page, or in
   `kai.properties` (directly or as `${ICA_CODEX_KEY}` / `${ICA_BASE_URL_V1}` environment
   variables). The address must end in `/v1` (the OpenAI Java SDK only appends
   `chat/completions`); Kai adds it if missing.
-- For mechanism 2 only: a Mac, Go (`brew install go`), and a Java 25 runtime for each target OS.
+- For mechanism 2 only: a Mac, Go (`brew install go`), and a Java 21 runtime for each target OS.
 
 ## Run from the IDE or command line
 
+First create your own settings file from the template, at the project root:
+
+```
+cp kai.properties.template kai.properties
+```
+
+Then point `kai.scan.local` and `kai.backup-dir` at your folders, either in the file or on the
+start page. `kai.properties` is not version controlled, because the start page can save your AI
+key into it. Change the template only for changes everyone should get (new settings, comments,
+defaults). If you skip the copy, Kai still starts, and **Start Kai** creates a bare
+`kai.properties` without the template's comments.
+
 IntelliJ: run `KaiApplication` with no arguments. The working directory is the project
-root, so it picks up `./kai.properties`, which scans `./sampleDocs`. To use another
-settings file, add the program argument `--config=/path/to/kai.properties`.
+root, so it picks up `./kai.properties`. To use another settings file, add the program
+argument `--config=/path/to/kai.properties`.
 
 ```
 ./mvnw spring-boot:run
@@ -439,12 +451,12 @@ listing models gives up after 10 s (connect) / 30 s (read).
 | | **Mechanism 1: jar** | **Mechanism 2: packaged executable** |
 |---|---|---|
 | Artifact | `kai.jar` (Spring Boot fat jar) | `kai.exe` / `kai` (Go binary with JRE + jar embedded) |
-| User needs | JDK/JRE 25 on the PATH | Nothing |
+| User needs | JDK/JRE 21 or newer on the PATH | Nothing |
 | Start | `java -jar kai.jar` from the folder with `kai.properties` | Double-click; finds `kai.properties` next to itself |
 | Config lookup | `--config=` or `./kai.properties` (working directory) | Launcher passes `--config=<exe folder>/kai.properties` |
-| Platforms | Any OS with Java 25 (incl. Linux) | Windows x64, macOS arm64 or x64 (one build per OS) |
+| Platforms | Any OS with Java 21 or newer (incl. Linux) | Windows x64, macOS arm64 or x64 (one build per OS) |
 | Size | ~150 MB | ~195 MB per OS (compressed runtime + jar) |
-| Build | `./mvnw package` | `./mvnw package` + 2 JREs + `packaging/build.sh` |
+| Build | `./mvnw package` | `packaging/build.sh` (runs `./mvnw clean package`; needs the 2 JREs in `packaging/jre/`) |
 | Signing prompts | None | SmartScreen (Windows), Gatekeeper (macOS) on first start |
 
 Both run the **same jar**: mechanism 2 is only a wrapper around mechanism 1. There is no
@@ -454,7 +466,7 @@ second code path to test.
 
 **Why.** It is the simplest artifact a Spring Boot app can have: one file, one command,
 works on every OS, and it is exactly what you run in development. It suits developers,
-testers, Linux users, and machines where Java 25 is already managed by IT.
+testers, Linux users, and machines where Java 21 is already managed by IT.
 
 **How it works.** `spring-boot-maven-plugin` repackages the build into an executable fat
 jar: your classes plus every dependency (Spring, Tomcat, Spring AI, Tika, POI, PDFBox)
@@ -469,7 +481,7 @@ the Kai folder. Started anywhere else, the start page says there is no settings 
 ```
 ./mvnw package                       # -> target/kai-0.0.1-SNAPSHOT.jar
 cp target/kai-0.0.1-SNAPSHOT.jar dist/kai.jar
-cp kai.properties dist/              # point kai.scan.local / kai.backup-dir at user folders first
+cp kai.properties.template dist/kai.properties   # adjust kai.scan.local / kai.backup-dir first if needed
 ```
 
 Give the user `kai.jar` and `kai.properties` in one folder. They run:
@@ -479,7 +491,7 @@ java -jar kai.jar                                  # uses ./kai.properties
 java -jar kai.jar --config=/path/to/kai.properties # or an explicit file
 ```
 
-**Trade-off.** Users must install the right Java (25; older Java fails with
+**Trade-off.** Users must install the right Java (21 or newer; older Java fails with
 `UnsupportedClassVersionError`) and use a terminal. For non-technical users that is the
 main source of setup trouble, which is what mechanism 2 removes.
 
@@ -495,7 +507,7 @@ unchanged jar on a normal JVM.
 
 **How it works at runtime** (`packaging/launcher/main.go`):
 
-1. The binary contains `payload.tar.gz` (a Java 25 runtime as `jre/` plus `kai.jar`) via
+1. The binary contains `payload.tar.gz` (a Java 21 runtime as `jre/` plus `kai.jar`) via
    `go:embed`.
 2. On start it unpacks the payload to `<exe folder>/.kai-runtime/<first 6 bytes of the
    payload's sha256>/`. It unpacks into a temp folder (`unpack-*`) and renames it at the end,
@@ -515,28 +527,28 @@ paths, so Kai never scans its own runtime even if the folder is inside a scan ta
 
 **How to build it** (on a Mac):
 
-1. Build the jar: `./mvnw package`.
-2. Get a Java 25 runtime for each target: a Windows x64 one and a macOS one (arm64 by
-   default). The simplest is the Temurin 25 **JRE** download for each OS from adoptium.net,
-   unzipped. You can make them smaller with `jlink` (only the modules Kai needs), but a
-   jlinked runtime must be built from the target OS's JDK `jmods`, with the same JDK version.
-3. Make an input folder (for example `packaging/build/`, which is git-ignored) with exactly:
+1. One-time setup: get a Java 21 runtime for each target, a Windows x64 one and a macOS one
+   (arm64 by default). The simplest is the Temurin 21 **JRE** download for each OS from
+   adoptium.net, unzipped. You can make them smaller with `jlink` (only the modules Kai needs),
+   but a jlinked runtime must be built from the target OS's JDK `jmods`, with the same JDK
+   version. Put them in `packaging/jre/` (git-ignored, or set `JRE_DIR`):
 
 ```
-packaging/build/
-├── kai-0.0.1-SNAPSHOT.jar   exactly one *.jar (renamed to kai.jar inside the payload)
-├── winjre/                  Windows runtime, must contain bin/java.exe
-├── macjre/                  macOS runtime, must contain bin/java
-├── kai.properties           the settings template users get
-└── README.md                exactly one README* (copy of packaging/README.md)
+packaging/jre/
+├── winjre/    Windows runtime, must contain bin/java.exe
+└── macjre/    macOS runtime, must contain bin/java
 ```
 
-4. Run:
+2. Run (from anywhere):
 
 ```
-packaging/build.sh packaging/build                 # Apple Silicon macjre (default)
-MAC_ARCH=amd64 packaging/build.sh packaging/build  # if macjre is an Intel runtime
+packaging/build.sh                  # Apple Silicon macjre (default)
+MAC_ARCH=amd64 packaging/build.sh   # if macjre is an Intel runtime
 ```
+
+`build.sh` first runs `./mvnw clean package` at the project root, so the jar is always built
+from the current source. It ships `kai.properties.template` as `kai.properties` (the settings users get)
+and `packaging/README.md` with each package.
 
 For each OS, `build.sh` tars `jre/` + `kai.jar` into `launcher/payload.tar.gz`
 (`tar -h` turns symlinks into plain files, `COPYFILE_DISABLE` keeps out macOS `._` files),
@@ -564,7 +576,7 @@ unpacks into a fresh folder and never mixes files with the old one.
   writable (not `Program Files`, not a read-only share) and should not be in a synced folder.
 - Windows is x64 only. For Linux, use mechanism 1 (or add a `build linux amd64 ...` line
   and a Linux runtime to `build.sh`).
-- The JRE inside must be Java 25, the same version the jar is built for.
+- The JRE inside must be Java 21 or newer. Use Temurin 21, the version the jar targets.
 
 ## Extending
 

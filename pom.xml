@@ -27,7 +27,7 @@
 		<url/>
 	</scm>
 	<properties>
-		<java.version>25</java.version>
+		<java.version>21</java.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -84,21 +84,21 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
-			<!-- Fail the build unless it runs on JDK 25 (version managed by the Spring Boot parent) -->
+			<!-- Fail the build on JDK older than 21. Newer JDKs are fine: the release setting keeps the bytecode at 21 (version managed by the Spring Boot parent) -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-enforcer-plugin</artifactId>
 				<executions>
 					<execution>
-						<id>require-jdk-25</id>
+						<id>require-jdk-21</id>
 						<goals>
 							<goal>enforce</goal>
 						</goals>
 						<configuration>
 							<rules>
 								<requireJavaVersion>
-									<version>[25,26)</version>
-									<message>Kai must be built with JDK 25. Set JAVA_HOME, or in IntelliJ: Settings > Build Tools > Maven > Runner > JRE.</message>
+									<version>[21,)</version>
+									<message>Kai must be built with JDK 21 or newer. Set JAVA_HOME, or in IntelliJ: Settings > Build Tools > Maven > Runner > JRE.</message>
 								</requireJavaVersion>
 							</rules>
 						</configuration>

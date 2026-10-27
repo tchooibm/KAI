@@ -241,7 +241,7 @@ public final class KaiConfig {
 		System.err.println(message);
 		System.err.println();
 		Console console = System.console();
-		if (console != null && console.isTerminal()) {
+		if (console != null) { // Java 21: null without a real terminal. Java 22+ may return one anyway (the IDE then waits for Enter)
 			System.err.println("Press Enter to close this window.");
 			console.readLine();
 		}
