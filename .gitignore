@@ -38,11 +38,11 @@ build/
 *.log
 
 ### Kai Impact ###
+/kai.properties
 kai-backups/
 sampleDocs/
 
 ### Packaging ###
 packaging/dist/
-packaging/build/
-packaging/jre/
+packaging/jre/*
 packaging/launcher/payload.tar.gz
