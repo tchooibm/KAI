@@ -6,12 +6,18 @@ calling a stage done. Record results in the table at the end.
 
 ## Setup
 
+`sampleDocs/` holds the golden documents. Tests never touch them: `scripts/test-env.sh` makes a copy.
+
 1. Build: `./mvnw -q clean package` (must be clean).
-2. Copy the sample folders you need, so Finalize can be tried without touching the originals:
-   `cp -r sampleDocs /tmp/kai-test`.
-3. In `kai.properties` set `kai.scan.local=/tmp/kai-test/stage7, /tmp/kai-test/office` and a model.
-4. Start Kai, open `/start`, press Check, then open the chat.
-5. After each text-file test that is finalized, restore with `cp -r sampleDocs/stage7/. /tmp/kai-test/stage7/`.
+2. `scripts/test-env.sh setup` copies `sampleDocs/*` to `/tmp/kai-test` (override with `KAI_TEST_DIR`)
+   and writes `/tmp/kai-test/kai.properties` from `kai.properties.template`: scan folders = the
+   copies, history folder = `/tmp/kai-test/history`, `kai.scan.parallel=1`. Add your model/key lines to it.
+3. Start Kai with `--config=/tmp/kai-test/kai.properties`, open `/start`, press Check, then open the chat.
+4. Between tests that Finalize: `scripts/test-env.sh reset` (back to the golden state).
+   After a Finalize, `scripts/test-env.sh diff` shows exactly what Kai changed.
+5. When done: `scripts/test-env.sh clean` removes the copy, the history folder and the config.
+
+The script refuses to delete a folder it did not create. Large-file test D4 is deferred (see D).
 
 "Routing N of M" is the progress-log line `Routing: <file> N of M sections to check`. The coverage
 text "(N of M sections checked)" appears at the end of each finding's reason in the report.
@@ -22,21 +28,21 @@ Request: `Change the default port from 8080 to 9090`
 
 | # | File | Expected routing | Expected result |
 |---|---|---|---|
-| A1 | stage7/short-readme.md | 0 of 1 | Not affected, "(0 of 1 sections checked)". "Portal" must not match "port". |
-| A2 | stage7/multi-section-guide.md | 3 of 6 (Deployment + its two neighbours) | Affected: Deployment only. |
-| A3 | stage7/runbook-crlf.md | 3 of 3 | Affected: step 3 only. Proposal keeps CRLF line endings (check with `file` or a hex view after Finalize). |
-| A4 | stage7/braces-config.md | 3 of 3 | Affected: `${PORT:8080}` becomes `${PORT:9090}`; braces survive. |
-| A5 | stage7/incident-notes.md | 3 of 3 (the empty title section is dropped; "Ports" matches via the plural) | Not affected: ports there are firewall policy, not the default port. A false "affected" here is a Scanner-quality issue, not a routing one. |
-| A6 | stage7/big-handbook.md (211 KB, 117 sections) | Far fewer than 117 | Port line 167 found. Scan finishes in reasonable time. No "Could not apply". |
+| A1 | testMdFiles/short-readme.md | 0 of 1 | Not affected, "(0 of 1 sections checked)". "Portal" must not match "port". |
+| A2 | testMdFiles/multi-section-guide.md | 3 of 6 (Deployment + its two neighbours) | Affected: Deployment only. |
+| A3 | testMdFiles/runbook-crlf.md | 3 of 3 | Affected: step 3 only. Proposal keeps CRLF line endings (check with `file` or a hex view after Finalize). |
+| A4 | testMdFiles/braces-config.md | 3 of 3 | Affected: `${PORT:8080}` becomes `${PORT:9090}`; braces survive. |
+| A5 | testMdFiles/incident-notes.md | 3 of 3 (the empty title section is dropped; "Ports" matches via the plural) | Not affected: ports there are firewall policy, not the default port. A false "affected" here is a Scanner-quality issue, not a routing one. |
+| A6 | testMdFiles/big-handbook.md (211 KB, 117 sections) | Far fewer than 117 | Port line 167 found. Scan finishes in reasonable time. No "Could not apply". |
 
 Request: `Use Java 21 instead of Java 17`
 
 | # | File | Expected |
 |---|---|---|
-| A7 | stage7/short-readme.md | Affected (1 of 1). |
-| A8 | stage7/multi-section-guide.md | Tooling affected. Routing includes Tooling and neighbours; "2017"-style numbers do not match "17". |
-| A9 | stage7/big-handbook.md | Line 657 found. |
-| A10 | stage7/runbook-crlf.md | `temurin:17` found (term split on ":"). |
+| A7 | testMdFiles/short-readme.md | Affected (1 of 1). |
+| A8 | testMdFiles/multi-section-guide.md | Tooling affected. Routing includes Tooling and neighbours; "2017"-style numbers do not match "17". |
+| A9 | testMdFiles/big-handbook.md | Line 657 found. |
+| A10 | testMdFiles/runbook-crlf.md | `temurin:17` found (term split on ":"). |
 
 ## B. Edit, review, finalize (text files)
 
@@ -56,13 +62,13 @@ Every affected finding names where the change is: "Where: Slide 3; Slide 3 > Not
 "Where: Setup > Starting the server; Troubleshooting." (docx). Note that a pptx counts each slide's notes as a
 separate section, so kai-overview.pptx has 6 sections (5 slides + the Run slide's notes).
 
-Files in `sampleDocs/office/`. These cannot be edited; Kai reports what to change by hand.
+Files in `sampleDocs/testOfficeDocs/`. These cannot be edited; Kai reports what to change by hand.
 Request: `Change the default port from 8080 to 9090`
 
 | # | File | Expected routing | Expected result |
 |---|---|---|---|
 | C1 | admin-guide.docx | Sections follow Word headings; log shows headings like "Setup > Starting the server" in the Scanner/log output. | Affected: "Starting the server" and "Troubleshooting". Not the "since 2017" or "support" sentences. "Update by hand" note shown. |
-| C2 | kai-overview.pptx | Sections are slides in presentation order: Slide 1 Kai Overview, 2 Install, 3 Run, 4 Support, 5 Roadmap. Expect 3 of 5 (Run plus neighbours). | Affected: Slide 3 (Run), including its "## Notes" text. Not Slide 5 (Roadmap). |
+| C2 | kai-overview.pptx | Sections are slides in presentation order: Slide 1 Kai Overview, 2 Install, 3 Run, 4 Support, 5 Roadmap. Expect 4 of 6 (Slide 3, its notes, and the neighbours Slide 2 and Slide 4). | Affected: Slide 3 (Run), including its "## Notes" text. Not Slide 5 (Roadmap). |
 | C3 | release-notes.pdf | Sections are pages: 3 of 5 (pages 2-4). | Affected: page 3 only ("Where: Page 3."). Page 4 ("2017-44") not affected. |
 
 Request: `Use Java 21 instead of Java 17`
@@ -80,10 +86,10 @@ in Tika's output; fix `OfficeText` before anything else.
 
 | # | Steps | Expected |
 |---|---|---|
-| D1 | Put a corrupt file named `bad.docx` (a renamed text file) in the office folder. | That file shows an error finding; the rest of the scan completes. An error is never shown as "No change". |
+| D1 | Put a corrupt file named `bad.docx` (a renamed text file) in the testOfficeDocs folder. | That file shows an error finding; the rest of the scan completes. An error is never shown as "No change". |
 | D2 | Stop the model server mid-scan. | Affected files show an error with a reason, not "not affected". |
 | D3 | Open an Office file in Word (creates `~$name.docx`). | The lock file is not listed or scanned. |
-| D4 | Large file: create a ~300-500 MB markdown file (`for i in $(seq 2000); do cat sampleDocs/stage7/big-handbook.md; done > /tmp/kai-test/huge.md`, ~420 MB). Request `Change the default port from 8080 to 9090`. Watch Kai's java process in Activity Monitor. | File is listed; Kai's memory stays roughly flat (well under 1 GB) during the scan, the machine stays responsive; the proposal shows one box per changed section labelled "Line N · heading"; Finalize writes a file identical to the original except the edited lines (`cmp -l` or `diff` shows only those). Expect many sections (each copy has a port line): stop the scan by closing Kai if it takes too long — memory is what this test checks. |
+| D4 | **Deferred** (large files; not in the current run). Large file: create a ~300-500 MB markdown file (`for i in $(seq 2000); do cat sampleDocs/testMdFiles/big-handbook.md; done > /tmp/kai-test/huge.md`, ~420 MB). Request `Change the default port from 8080 to 9090`. Watch Kai's java process in Activity Monitor. | File is listed; Kai's memory stays roughly flat (well under 1 GB) during the scan, the machine stays responsive; the proposal shows one box per changed section labelled "Line N · heading"; Finalize writes a file identical to the original except the edited lines (`cmp -l` or `diff` shows only those). Expect many sections (each copy has a port line): stop the scan by closing Kai if it takes too long — memory is what this test checks. |
 | D6 | Run A2, then edit the file on disk (add a line at the top) before Finalize. | "These files changed after the scan" and nothing is written. |
 | D5 | Scan with `kai.scan.parallel=4` and the full folder set. | Report keeps folder and file order. |
 
@@ -96,6 +102,18 @@ in Tika's output; fix `OfficeText` before anything else.
 
 ## Results log
 
+Build = the commit the code was tested at. Model = the model in the tester's `kai.properties`.
+
 | Date | Build | Model | Tests run | Pass | Notes |
 |---|---|---|---|---|---|
-| | | | | | |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | A2: multi-section-guide.md | Yes | Only the Deployment line (17) changed; everything else byte-identical to golden. |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | A3: runbook-crlf.md | Yes | Only step 3 (line 7) changed. |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | A3 CRLF check (`file`, `grep -c $'\r'`) | Yes | CRLF terminators kept; 12 lines with `\r`. |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | A4: braces-config.md | Yes | `${PORT:8080}` became `${PORT:9090}`, braces intact. The prose line above it also changed, as the request asks. |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | A6: big-handbook.md (211 KB) | Yes | Only line 167 changed. |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | A1, A5 (no edits expected) | Yes | short-readme.md and incident-notes.md not changed on disk. Routing and Scanner verdicts not checked in the report. |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | Backup check: `cmp` of backed-up runbook-crlf.md vs golden | Yes | Byte-identical. Backup is in `~/Downloads/KAItest`, not the test folder. |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | C1: admin-guide.docx | Yes | "Where: Setup > Starting the server; Troubleshooting." 4 of 6 sections checked. "Update by hand". |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | C2: kai-overview.pptx | Yes | "Where: Slide 3; Slide 3 > Notes." 4 of 6 sections checked; Slide 5 not flagged. Plan said 3 of 5; corrected to 4 of 6. |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | C3: release-notes.pdf | Yes | "Where: Page 3." 3 of 5 sections checked; page 4 ("2017-44") not flagged. Closes the open C3 check. |
+| 2026-10-28 | c330ae5 | (tester's kai.properties) | B1b, B4, D1, D6 | Deferred | Low priority; skipped for now. |

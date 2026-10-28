@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 // A failure prints the whole extracted text, and the text is also saved to target/office-dump/.
 class OfficeTextTests {
 
-	private static final Path DIR = Path.of("sampleDocs/office");
+	private static final Path DIR = Path.of("sampleDocs/testOfficeDocs");
 
 	private static String read(String name) throws Exception {
 		StringWriter out = new StringWriter();

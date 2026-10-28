@@ -66,7 +66,7 @@ src/main/resources/templates/start.html, chat.html
 kai.properties.template  settings template (version controlled); copied to kai.properties for dev and packaging
 kai.properties     user settings, not version controlled; lives next to kai.jar (or project root in the IDE)
 README.md          how to run (users first, developers at the bottom)
-sampleDocs/        10 cloud-onboarding test documents (git-ignored)
+sampleDocs/        10 cloud-onboarding test documents (golden copies, tracked in git)
 ```
 
 ## Sample documents (`sampleDocs/`)

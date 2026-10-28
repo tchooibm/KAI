@@ -323,7 +323,7 @@ kai/
 ├── src/main/resources/
 │   ├── application.properties   built-in defaults; kai.properties overrides them
 │   └── templates/               start.html (start page), chat.html (the UI), final-report.html (saved report)
-├── sampleDocs/                  demo documents (git-ignored)
+├── sampleDocs/                  golden test documents (tracked in git)
 └── packaging/                   mechanism 2: one executable per OS
     ├── build.sh                 runs ./mvnw clean package, then builds dist/ (jar + jre/ + kai.properties + README)
     ├── launcher/main.go         Go launcher that embeds the Java runtime and kai.jar
