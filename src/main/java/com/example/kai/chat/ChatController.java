@@ -225,8 +225,8 @@ public class ChatController {
 		}
 	}
 
-	// "Save edits" on one report: the textarea text and include tick of each proposal.
-	// Fields are named text<i> / include<i>, i = the finding's index in the report.
+	// "Save edits" on one report: the textarea texts and include tick of each proposal.
+	// Fields are named text<i>_<k> (k = changed section) / include<i> / shown<i>, i = the finding's index in the report.
 	// Saved in the session only; nothing is written to disk.
 	@PostMapping("/save")
 	public String save(@RequestParam int report, @RequestParam Map<String, String> form, HttpSession session) {
@@ -284,9 +284,12 @@ public class ChatController {
 		List<Finding> findings = report.findings();
 		for (int i = 0; i < findings.size(); i++) {
 			Proposal p = findings.get(i).proposal();
-			String text = form.get("text" + i);
-			if (p != null && p.ready() && text != null) {
-				p.save(text, form.containsKey("include" + i));
+			if (p != null && p.ready() && form.containsKey("shown" + i)) {
+				List<String> texts = new ArrayList<>();
+				for (int k = 0; k < p.parts().size(); k++) {
+					texts.add(form.get("text" + i + "_" + k));
+				}
+				p.save(texts, form.containsKey("include" + i));
 			}
 		}
 	}

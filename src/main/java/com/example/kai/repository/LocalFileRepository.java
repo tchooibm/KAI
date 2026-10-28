@@ -1,15 +1,15 @@
 package com.example.kai.repository;
 
+import java.io.FilterReader;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.Reader;
+import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
-
-import org.apache.tika.Tika;
-import org.apache.tika.exception.TikaException;
 
 import org.springframework.stereotype.Component;
 
@@ -22,15 +22,10 @@ public class LocalFileRepository implements DocumentRepository {
 	// Text extracted with Tika for scanning only; Kai never rewrites these
 	private static final Set<String> OFFICE = Set.of("docx", "pptx", "pdf", "doc", "ppt");
 
-	private static final long MAX_TEXT_BYTES = 50_000; // keep prompts small
-	private static final long MAX_OFFICE_BYTES = 10_000_000; // images make office files big; the text is small
-	private static final int MAX_CHARS = 50_000; // cap on extracted text
+	// Files are streamed, so this is not a memory limit: it keeps scan times and temp files sane
+	private static final long MAX_BYTES = 500_000_000L;
 
-	private final Tika tika = new Tika();
-
-	public LocalFileRepository() {
-		tika.setMaxStringLength(MAX_CHARS);
-	}
+	private static final Object EXTRACTING = new Object();
 
 	@Override
 	public String type() {
@@ -51,18 +46,37 @@ public class LocalFileRepository implements DocumentRepository {
 		}
 	}
 
+	// A text file is read in place. Office/PDF text is extracted to a temp file first (not into
+	// memory); the temp file is deleted when the reader is closed.
 	@Override
-	public String read(String location, String id) throws IOException {
+	public Reader open(String location, String id) throws IOException {
 		Path file = resolve(location, id);
 		if (canWrite(id)) {
-			return Files.readString(file);
+			return Files.newBufferedReader(file);
 		}
-		try (InputStream in = Files.newInputStream(file)) {
-			return tika.parseToString(in);
+		Path text = Files.createTempFile("kai-", ".txt");
+		// One extraction at a time: the parsers keep some of each file in memory (e.g. a big
+		// slide or embedded part), so parallel scans must not stack them
+		synchronized (EXTRACTING) {
+			try (Writer out = Files.newBufferedWriter(text)) {
+				OfficeText.extract(file, out);
+			}
+			catch (IOException | RuntimeException e) {
+				Files.deleteIfExists(text);
+				throw e;
+			}
 		}
-		catch (TikaException e) {
-			throw new IOException("Cannot extract text from " + id + ": " + e.getMessage(), e);
-		}
+		return new FilterReader(Files.newBufferedReader(text)) {
+			@Override
+			public void close() throws IOException {
+				try {
+					super.close();
+				}
+				finally {
+					Files.deleteIfExists(text);
+				}
+			}
+		};
 	}
 
 	@Override
@@ -71,30 +85,54 @@ public class LocalFileRepository implements DocumentRepository {
 	}
 
 	@Override
-	public void write(String location, String id, String content) throws IOException {
-		if (!canWrite(id)) {
-			throw new IOException(id + " is read-only in Kai (update it by hand)");
+	public String version(String location, String id) throws IOException {
+		Path file = resolve(location, id);
+		return Files.size(file) + ":" + Files.getLastModifiedTime(file).toMillis();
+	}
+
+	// Streams original -> a temp file, and only when that worked copies it over the file. The copy
+	// writes into the existing file, so its permissions stay as they are.
+	@Override
+	public void write(String location, String id, Rewrite rewrite) throws IOException {
+		Path file = resolve(location, id);
+		if (!canWrite(id) || !Files.isWritable(file)) {
+			throw new IOException(id + " is read-only" + (canWrite(id) ? "" : " in Kai (update it by hand)"));
 		}
-		Files.writeString(resolve(location, id), content);
+		Path next = Files.createTempFile("kai-", ".new");
+		try {
+			try (Reader in = Files.newBufferedReader(file); Writer out = Files.newBufferedWriter(next)) {
+				rewrite.apply(in, out);
+			}
+			overwrite(next, file);
+		}
+		finally {
+			Files.deleteIfExists(next);
+		}
 	}
 
 	@Override
-	public byte[] readBytes(String location, String id) throws IOException {
-		return Files.readAllBytes(resolve(location, id));
+	public void copyTo(String location, String id, Path backup) throws IOException {
+		Files.copy(resolve(location, id), backup);
 	}
 
 	@Override
-	public void writeBytes(String location, String id, byte[] content) throws IOException {
+	public void restore(String location, String id, Path backup) throws IOException {
 		if (!canWrite(id)) {
 			throw new IOException(id + " is read-only in Kai (update it by hand)");
 		}
-		Files.write(resolve(location, id), content);
+		overwrite(backup, resolve(location, id));
+	}
+
+	private static void overwrite(Path from, Path to) throws IOException {
+		try (OutputStream out = Files.newOutputStream(to)) { // truncates
+			Files.copy(from, out);
+		}
 	}
 
 	private static boolean supported(Path p) {
 		String ext = extension(p);
 		long size = p.toFile().length();
-		return (TEXT.contains(ext) && size <= MAX_TEXT_BYTES) || (OFFICE.contains(ext) && size <= MAX_OFFICE_BYTES);
+		return (TEXT.contains(ext) || OFFICE.contains(ext)) && size <= MAX_BYTES;
 	}
 
 	private static Path root(String location) {

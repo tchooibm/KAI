@@ -67,11 +67,12 @@ public class ChangeWriter {
 			return new Outcome(Result.NOT_WRITTEN, "Nothing to write: no ticked file has changes.", null);
 		}
 
-		// 1. Stale check: the file must still be exactly what the proposal was made from
+		// 1. Stale check: the file must still be the version the proposal was made from. Writing
+		// checks again that each replaced section still holds the scanned text.
 		List<String> stale = new ArrayList<>();
 		for (Finding f : selected) {
 			try {
-				if (!repos.apply(f.target().type()).read(f.target().location(), f.file()).equals(f.proposal().original())) {
+				if (!repos.apply(f.target().type()).version(f.target().location(), f.file()).equals(f.proposal().version())) {
 					stale.add(name(f));
 				}
 			}
@@ -101,7 +102,8 @@ public class ChangeWriter {
 				Finding f = r.finding();
 				Path backup = Path.of(r.backup());
 				Files.createDirectories(backup.getParent());
-				Files.write(backup, repos.apply(f.target().type()).readBytes(f.target().location(), f.file()));
+				Files.deleteIfExists(backup);
+				repos.apply(f.target().type()).copyTo(f.target().location(), f.file(), backup);
 			}
 		}
 		catch (Exception e) {
@@ -117,7 +119,7 @@ public class ChangeWriter {
 		for (Row r : rows) {
 			Finding f = r.finding();
 			try {
-				repos.apply(f.target().type()).write(f.target().location(), f.file(), f.proposal().proposed());
+				repos.apply(f.target().type()).write(f.target().location(), f.file(), f.proposal()::rewrite);
 				log.info("WRITER {} wrote {}", run, name(f));
 			}
 			catch (Exception e) {
@@ -136,7 +138,7 @@ public class ChangeWriter {
 		for (Row r : rows) {
 			Finding f = r.finding();
 			try {
-				repos.apply(f.target().type()).writeBytes(f.target().location(), f.file(), Files.readAllBytes(Path.of(r.backup())));
+				repos.apply(f.target().type()).restore(f.target().location(), f.file(), Path.of(r.backup()));
 			}
 			catch (Exception e) {
 				log.error("WRITER {} -> RESTORE FAILED: {}", run, name(f), e);

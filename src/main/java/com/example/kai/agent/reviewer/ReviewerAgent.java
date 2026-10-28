@@ -35,6 +35,7 @@ public class ReviewerAgent {
 		this.models = models;
 	}
 
+	// original/proposed: the changed sections only, before and after the edits
 	public Review review(String instruction, String file, String original, String proposed) {
 		long start = System.currentTimeMillis();
 		String user = "Change request:\n" + instruction

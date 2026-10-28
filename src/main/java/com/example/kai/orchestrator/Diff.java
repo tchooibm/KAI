@@ -12,6 +12,7 @@ public final class Diff {
 	}
 
 	private static final int CONTEXT = 2; // unchanged lines shown around each change
+	private static final long MAX_CELLS = 25_000_000L; // ~100 MB table
 
 	private Diff() {
 	}
@@ -31,8 +32,11 @@ public final class Diff {
 		}
 		int n = a.length - pre - suf;
 		int m = b.length - pre - suf;
-		int[][] lcs = new int[n + 1][m + 1];
-		for (int i = n - 1; i >= 0; i--) {
+		// A huge changed middle (edits far apart in a big file) would need an n x m table: show it as
+		// all removed then all added instead. Proposals are per section (a few KB), so this is only a guard.
+		boolean tooBig = (long) n * m > MAX_CELLS;
+		int[][] lcs = new int[tooBig ? 0 : n + 1][tooBig ? 0 : m + 1];
+		for (int i = n - 1; i >= 0 && !tooBig; i--) {
 			for (int j = m - 1; j >= 0; j--) {
 				lcs[i][j] = a[pre + i].equals(b[pre + j]) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
 			}
@@ -45,11 +49,11 @@ public final class Diff {
 		int i = 0;
 		int j = 0;
 		while (i < n || j < m) {
-			if (i < n && j < m && a[pre + i].equals(b[pre + j])) {
+			if (!tooBig && i < n && j < m && a[pre + i].equals(b[pre + j])) {
 				all.add(new Line("same", a[pre + i++]));
 				j++;
 			}
-			else if (i < n && (j == m || lcs[i + 1][j] >= lcs[i][j + 1])) {
+			else if (i < n && (j == m || tooBig || lcs[i + 1][j] >= lcs[i][j + 1])) {
 				all.add(new Line("del", a[pre + i++])); // removed lines before added ones
 			}
 			else {

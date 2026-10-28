@@ -1,6 +1,7 @@
 package com.example.kai.orchestrator;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -8,6 +9,8 @@ import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +24,8 @@ import com.example.kai.agent.scanner.ScannerAgent;
 import com.example.kai.config.KaiProperties;
 import com.example.kai.config.Setup;
 import com.example.kai.config.KaiProperties.Target;
+import com.example.kai.orchestrator.Sectioner.Paragraph;
+import com.example.kai.orchestrator.Sectioner.Section;
 import com.example.kai.repository.DocumentRepository;
 import com.example.kai.writer.ChangeWriter;
 
@@ -41,6 +46,7 @@ public class Orchestrator {
 	private final ReviewerAgent reviewer;
 	private final ChangeWriter writer;
 	private final Setup setup;
+	private final Router router = new TermRouter(); // Stage 7; stage 8 adds embeddings here
 
 	// Spring injects every DocumentRepository bean, so new adapters register themselves
 	public Orchestrator(List<DocumentRepository> repositories, ExtractorAgent extractor, ScannerAgent scanner,
@@ -93,16 +99,46 @@ public class Orchestrator {
 		return new Finding.Source(targets.get(i), file);
 	}
 
-	// Step 1 for an updated file: what changed in it, guided by the user's summary
+	// Step 1 for an updated file: what changed in it, guided by the user's summary.
+	// A small file goes to the Extractor whole; from a big one only the sections that match the
+	// summary's words, up to EXTRACT_CHARS, so the prompt and memory stay small.
 	public Extraction extract(String summary, Finding.Source source, Progress progress) throws IOException {
 		Target target = source.target();
 		progress.add("Extractor: reading " + source.name());
-		String content = repository(target.type()).read(target.location(), source.file());
-		ExtractorAgent.Changes c = extractor.extract(summary, source.file(), content);
+		StringBuilder whole = new StringBuilder();
+		StringBuilder matched = new StringBuilder();
+		Predicate<Section> match = router.matcher(summary);
+		boolean truncated = false;
+		try (Reader in = repository(target.type()).open(target.location(), source.file())) {
+			Sectioner sectioner = new Sectioner(in);
+			for (Section s = sectioner.next(); s != null; s = sectioner.next()) {
+				if (whole != null) {
+					whole.append(s.text());
+					if (whole.length() > EXTRACT_CHARS) {
+						whole = null; // too big to send whole
+					}
+				}
+				if (match.test(s)) {
+					if (matched.length() + s.text().length() > EXTRACT_CHARS) {
+						truncated = true;
+					}
+					else {
+						matched.append(s.text());
+					}
+				}
+			}
+		}
+		if (whole == null) {
+			progress.add("Extractor: " + source.name() + " is large, so only the sections that mention the summary's words are read"
+					+ (truncated ? " (the first " + EXTRACT_CHARS + " characters of them)" : ""));
+		}
+		ExtractorAgent.Changes c = extractor.extract(summary, source.file(), whole != null ? whole.toString() : matched.toString());
 		progress.add("Extractor: found " + c.changes().size() + " changes"
 				+ (c.notFound().isEmpty() ? "" : ", " + c.notFound().size() + " not found in the file"));
 		return new Extraction(source, summary, c.changes(), c.notFound());
 	}
+
+	private static final int EXTRACT_CHARS = 60_000; // about 15k tokens
 
 	// Handles up to kai.scan.parallel files at the same time, across all targets. Each file runs
 	// scan -> edit -> review in one task, so edits for one file overlap with scans of others.
@@ -137,21 +173,56 @@ public class Orchestrator {
 		return writer.apply(report, this::repository);
 	}
 
-	// Never throws: one bad file or model call must not stop the scan, and must not look like "not affected"
+	// Never throws: one bad file or model call must not stop the scan, and must not look like "not affected".
+	// Stage 7: the file is read one section at a time; a section that matches the router is checked,
+	// and so are the sections either side of it. The Scanner asks one yes/no question per checked section.
+	// Only the affected sections are kept, so memory does not grow with the file size.
 	private Finding check(Target target, DocumentRepository repo, String instruction, String id, Progress progress) {
 		boolean editable = repo.canWrite(id);
 		String name = target.entry() + "/" + id;
 		try {
-			String content = repo.read(target.location(), id);
-			progress.add("Scanner: checking " + name);
-			ScannerAgent.Verdict v = scanner.assess(instruction, id, content);
-			if (!v.affected()) {
-				progress.add("Scanner: " + name + " needs no change");
-				return new Finding(target, id, Finding.Status.NOT_AFFECTED, v.reason(), editable, null);
+			String version = repo.version(target.location(), id);
+			Predicate<Section> match = router.matcher(instruction);
+			List<Section> affected = new ArrayList<>();
+			String reason = "No passage needs a change.";
+			int total = 0;
+			int checked = 0;
+			try (Reader in = repo.open(target.location(), id)) {
+				Sectioner sectioner = new Sectioner(in);
+				Section prev = null;
+				boolean prevChecked = false;
+				boolean prevMatched = false;
+				for (Section s = sectioner.next(); s != null; s = sectioner.next()) {
+					total++;
+					boolean matched = match.test(s);
+					if (matched && prev != null && !prevChecked) { // the section before a match
+						checked++;
+						reason = assess(instruction, id, prev, affected, reason);
+					}
+					boolean take = matched || prevMatched; // a match, or the section after one
+					if (take) {
+						checked++;
+						reason = assess(instruction, id, s, affected, reason);
+					}
+					prev = s;
+					prevChecked = take;
+					prevMatched = matched;
+				}
 			}
-			progress.add("Scanner: " + name + " must change" + (editable ? "" : " (update by hand)"));
-			Proposal proposal = editable ? propose(instruction, id, name, content, progress) : null;
-			return new Finding(target, id, Finding.Status.AFFECTED, v.reason(), editable, proposal);
+			progress.add("Routing: " + name + " " + checked + " of " + total + " sections checked");
+			// Coverage is always shown, so "not affected" can be told apart from "not looked at"
+			String where = affected.stream().map(Section::headingPath).filter(p -> !p.isBlank()).distinct()
+					.collect(Collectors.joining("; "));
+			String coverage = (where.isEmpty() ? "" : " Where: " + where + ".") + " (" + checked + " of " + total
+					+ " sections checked)";
+			if (affected.isEmpty()) {
+				progress.add("Scanner: " + name + " needs no change");
+				return new Finding(target, id, Finding.Status.NOT_AFFECTED, reason + coverage, editable, null);
+			}
+			progress.add("Scanner: " + name + " must change in " + affected.size() + " section(s)"
+					+ (editable ? "" : " (update by hand)"));
+			Proposal proposal = editable ? propose(instruction, id, name, version, affected, progress) : null;
+			return new Finding(target, id, Finding.Status.AFFECTED, reason + coverage, editable, proposal);
 		}
 		catch (Exception e) {
 			log.warn("SCANNER {} {} -> ERROR", target.label(), id, e);
@@ -160,42 +231,76 @@ public class Orchestrator {
 		}
 	}
 
-	// Editor -> apply (one automatic retry if a passage doesn't match) -> Reviewer. Never throws.
-	private Proposal propose(String instruction, String id, String name, String content, Progress progress) {
-		String proposed;
+	// One Scanner call; an affected section is kept. Returns the reason to show.
+	private String assess(String instruction, String id, Section s, List<Section> affected, String reason) {
+		ScannerAgent.Verdict v = scanner.assess(instruction, id, s.headingPath(), s.text());
+		if (!v.affected()) {
+			return reason;
+		}
+		affected.add(s);
+		return v.reason();
+	}
+
+	// Per affected section: Editor edits numbered paragraphs (one retry with the problems), then the
+	// Reviewer checks the changed sections before and after. Never throws.
+	private Proposal propose(String instruction, String id, String name, String version, List<Section> affected,
+			Progress progress) {
 		try {
 			progress.add("Editor: drafting edits for " + name);
-			try {
-				proposed = Patch.apply(content, editor.propose(instruction, id, content, null));
+			List<Proposal.Part> parts = new ArrayList<>();
+			for (Section s : affected) {
+				parts.add(new Proposal.Part(s, Patch.apply(s.text(), editSection(instruction, id, s, name, progress))));
 			}
-			catch (Patch.NoMatch first) {
-				log.info("EDITOR {} -> retry:\n{}", id, first.getMessage());
-				progress.add("Editor: an edit did not match " + name + ", retrying once");
-				proposed = Patch.apply(content, editor.propose(instruction, id, content, first.getMessage()));
+			String before = join(affected.stream().map(Section::text).toList());
+			String after = join(parts.stream().map(Proposal.Part::proposed).toList());
+			// A reviewer failure keeps the proposal: the note says it wasn't checked
+			try {
+				progress.add("Reviewer: checking the edits for " + name);
+				ReviewerAgent.Review r = reviewer.review(instruction, id, before, after);
+				progress.add("Reviewer: " + name + (r.ok() ? " looks right" : " please check"));
+				return Proposal.ready(version, parts, r.ok(), r.note());
+			}
+			catch (Exception e) {
+				log.warn("REVIEWER {} -> ERROR", id, e);
+				progress.add("Reviewer: could not check " + name + ": " + message(e));
+				return Proposal.ready(version, parts, null, "The reviewer could not check this proposal: " + message(e));
 			}
 		}
 		catch (Patch.NoMatch e) {
 			log.warn("EDITOR {} -> could not apply:\n{}", id, e.getMessage());
 			progress.add("Editor: could not apply edits to " + name);
-			return Proposal.failed(content, "Kai's edits did not match the file text, so nothing was proposed.\n" + e.getMessage());
+			return Proposal.failed("Kai's edits could not be applied, so nothing was proposed.\n" + e.getMessage());
 		}
 		catch (Exception e) {
 			log.warn("EDITOR {} -> ERROR", id, e);
 			progress.add("Editor: failed on " + name + ": " + message(e));
-			return Proposal.failed(content, "The editor failed: " + message(e));
+			return Proposal.failed("The editor failed: " + message(e));
 		}
-		// A reviewer failure keeps the proposal: the note says it wasn't checked
-		try {
-			progress.add("Reviewer: checking the edits for " + name);
-			ReviewerAgent.Review r = reviewer.review(instruction, id, content, proposed);
-			progress.add("Reviewer: " + name + (r.ok() ? " looks right" : " please check"));
-			return Proposal.ready(content, proposed, r.ok(), r.note());
+	}
+
+	// One section: Editor -> spots in the section text. One retry, with the problems, if a paragraph number was wrong.
+	private List<Patch.Spot> editSection(String instruction, String id, Section s, String name, Progress progress)
+			throws Patch.NoMatch {
+		List<Paragraph> paragraphs = Sectioner.paragraphs(s);
+		List<String> texts = paragraphs.stream().map(Paragraph::text).toList();
+		String problems = null;
+		for (int attempt = 1;; attempt++) {
+			try {
+				return Patch.spots(s.text(), paragraphs, editor.propose(instruction, id, s.headingPath(), texts, problems));
+			}
+			catch (Patch.NoMatch e) {
+				if (attempt >= 2) {
+					throw e;
+				}
+				log.info("EDITOR {} -> retry:\n{}", id, e.getMessage());
+				progress.add("Editor: edits for " + name + " did not fit, retrying once");
+				problems = e.getMessage();
+			}
 		}
-		catch (Exception e) {
-			log.warn("REVIEWER {} -> ERROR", id, e);
-			progress.add("Reviewer: could not check " + name + ": " + message(e));
-			return Proposal.ready(content, proposed, null, "The reviewer could not check this proposal: " + message(e));
-		}
+	}
+
+	private static String join(List<String> parts) {
+		return String.join("\n...\n", parts);
 	}
 
 	private static String message(Exception e) {

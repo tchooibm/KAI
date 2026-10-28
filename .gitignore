@@ -42,6 +42,9 @@ build/
 kai-backups/
 sampleDocs/
 
+### Personal notes ###
+/KAI-JOURNAL.md
+
 ### Packaging ###
 packaging/dist/
 packaging/jre/*

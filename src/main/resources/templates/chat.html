@@ -131,7 +131,8 @@
         .nodiff { margin: 0; font-size: 13px; color: var(--muted); }
         details.edit { border: 0; margin-top: 6px; }
         details.edit summary { padding: 4px 0; color: var(--teal); font-weight: 500; }
-        details.edit textarea { width: 100%; min-height: 260px; resize: vertical; padding: 10px; border: 1px solid var(--line);
+        details.edit .part { margin: 8px 0 2px; font-size: 12px; color: var(--muted); }
+        details.edit textarea { width: 100%; min-height: 160px; resize: vertical; padding: 10px; border: 1px solid var(--line);
                 border-radius: 6px; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
         .save { display: flex; gap: 12px; align-items: center; margin-top: 10px; font-size: 13px; color: var(--muted); }
         .save button { padding: 8px 18px; }
@@ -282,11 +283,15 @@
                                     <em th:if="${p.edited()}">(This is about Kai's proposal, before your edit.)</em>
                                 </p>
                                 <div class="diff" th:unless="${#lists.isEmpty(d)}"><div th:each="l : ${d}" th:class="${l.kind}" th:text="${l.text}"></div></div>
-                                <p class="nodiff" th:if="${#lists.isEmpty(d)}">No differences from the original file.</p>
+                                <p class="nodiff" th:if="${#lists.isEmpty(d)}">No differences from the original text.</p>
+                                <input type="hidden" th:name="'shown' + ${i}" value="1">
                                 <details class="edit">
                                     <summary>Edit</summary>
-                                    <textarea th:name="'text' + ${i}" th:text="${p.proposed()}" spellcheck="false"
-                                              aria-label="Proposed text"></textarea>
+                                    <th:block th:each="part, pi : ${p.parts()}">
+                                        <p class="part" th:text="${part.label()}"></p>
+                                        <textarea th:name="'text' + ${i} + '_' + ${pi.index}" th:text="${part.editText()}" spellcheck="false"
+                                                  th:aria-label="'Proposed text, ' + ${part.label()}"></textarea>
+                                    </th:block>
                                 </details>
                             </th:block>
                         </td>

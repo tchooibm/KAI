@@ -133,6 +133,9 @@ Build: `./mvnw package` → `target/kai-0.0.1-SNAPSHOT.jar`; `packaging/build.sh
 | 4 | **Finalize**: write final HTML report (before/after for each selected file) → back up originals → write → if any write fails, restore every file from the backup | No | Happy path: files changed and report saved. Forced failure: every file identical to before, and the chat says "Rolled back" ✅ built (forced-failure test deferred, see below) |
 | 4b | **docx/pptx write-back** (after stage 4, decided 2026-10-01): Apache POI, edits only inside one paragraph; anything else stays "Could not apply" / "Update by hand". PDF stays by hand | No (edits come from the Editor as now) | Sample docx/pptx edited, open in Word/PowerPoint without a repair prompt, rollback restores them byte-for-byte |
 | 6 | **Updated file as the change** (2026-10-08): pick the updated file + type a summary → ExtractorAgent lists the changes → user confirms/edits → scan other files (updated file skipped) | Yes | See "Stage 6" below ✅ built (uncompiled) |
+| 7 | **Large files + small model** (built and user-tested 2026-10-28; ripple pass moved to stage 9): extract once, split into small sections, route by search terms, yes/no scan per section, edit by paragraph number, Java checks + Reviewer | Yes | See "Stage 7" below. A 500 MB pptx/pdf scans without truncation or running out of memory on an 8 GB laptop; `sampleDocs/` counts unchanged on a small local model |
+| 8 | **Embeddings for routing, optional** (planned 2026-10-28): a small bundled embedding model finds sections that paraphrase the change; without it Kai falls back to Stage 7's text search | No (embedding model only) | See "Stage 8" below. With the model present, paraphrased references are routed; with it missing, Kai still starts and says routing is keywords only |
+| 9 | **Contextual test case + model choice** (planned 2026-10-28, do later): a workflow gains a new pre-step; compare small models, with and without embeddings | Yes | See "Stage 9" below. Results table filled in; smallest good-enough model picked as the bundled default; embeddings kept only if they help |
 | 5 | Demo polish: "simulate failure" checkbox (fails on the last file) to show rollback live, agent log panel (✅ built early: live progress log), clearer errors | No | 2-minute demo runs cleanly |
 
 Stage 2b outcome (2026-10-01): **done through Box Drive, no Box code.** The hackathon has no
@@ -255,6 +258,189 @@ Stage 6: updated file as the change (built 2026-10-08, uncompiled):
 - **Why the pause:** the extracted list steers every proposed edit, so a misread is cheaper
   to fix here than after the whole scan. One click.
 - Size: the updated file is read once, with the usual `LocalFileRepository` limits.
+
+Stage 7: large files + small model (planned 2026-10-28; BUILT and user-tested 2026-10-28):
+
+**Built and verified (TEST-PLAN.md A6, C1-C3 pass):** `Sectioner`, `Router` + `TermRouter`
+(whole words, optional plural, neighbours), `ScannerAgent` per section with quote check,
+`EditorAgent` by paragraph number, `Patch` by offset, Reviewer on changed sections only,
+`OfficeText` (docx/pdf via Tika XHTML: headings -> `#`, pages -> `# Page N`, leading PDF
+metadata dropped; pptx read from the zip in presentation order, notes as `## Notes`; Tika
+listed slides out of order), coverage + location in each finding ("Where: Slide 3; Slide 3 >
+Notes. (4 of 6 sections checked)"), `Diff` guard (no n×m table above 25M cells), launcher
+`-XX:MaxRAMPercentage=70`, unit tests (`SectionPatchTests`, `OfficeTextTests`).
+**Dropped 2026-10-28:** `kai.edit=propose|flag` and `kai.review=on|off` (6b and the switch in
+8 below). User: "Kai should be a consistent experience" — one behaviour for every setup:
+always propose (text files), always review. Stage 9 picks the model, not the mode.
+**Moved to stage 9:** ripple pass (item 7 below): references to changed step numbers and counts
+("go back to step 2"), built only after the stage 9 baseline shows which misses it fixes.
+Related-phrasing model call (4) deferred to stage 8 (embeddings do the same job). Per-section `Diff` not needed (guard + small edits).
+
+**Streaming (2026-10-28, after user testing):** Kai must not freeze the machine, so no document
+is held whole in memory. `DocumentRepository.open` returns a `Reader` (text files read in place;
+Office/PDF text extracted to a temp file, one extraction at a time, PDFBox buffered on disk above
+64 MB). `Sectioner` hands out one section at a time; the Orchestrator checks a match plus its
+neighbours as it streams, and keeps only the affected sections. `Proposal` holds those sections
+(before/after, offsets, line) instead of the whole file; the review screen shows and edits one
+box per changed section. Finalize: stale check by size + modified time, backup by `Files.copy`,
+write by streaming the original through `Proposal.rewrite` into a temp file (each replaced section
+is re-checked against the scanned text), then copied over the file; rollback copies the backup back.
+The Extractor gets a big updated file's matching sections only (up to 60k chars). No JVM heap flag:
+memory stays flat, so the default heap is enough. The extract-once cache (item 1) is dropped:
+re-reading from disk is cheap and keeps memory flat.
+
+- **Why:** files can be up to ~500 MB (md, docx, pptx, pdf), and Kai should run on any
+  laptop, so the model should be as small as possible (target ~1–4B at Q4, CPU only).
+  Today every agent gets the whole file in one prompt. Also, `tika.parseToString` stops at
+  100,000 characters, so long Office/PDF files are silently cut off and the rest is
+  reported as "No change needed". The line diff (`Diff`) uses an n×m table, which runs out
+  of memory on very large text files.
+- **Design rule:** the pipeline does the heavy lifting, the model only answers narrow
+  questions about short passages. Anything Java can check, Java checks.
+- **1. Extract once.** `LocalFileRepository.read` sets no character limit and skips images.
+  The extracted text is cached by path + size + modified time (in memory for the session;
+  a disk cache is a later option), so a second scan of the same file does not re-parse it.
+- **2. Split into small sections.** A new `orchestrator/Section(id, headingPath, start, end, text)`.
+  The split follows the document's own structure, never a fixed size: md by headings,
+  docx by headings (Tika XHTML `h1..h6`), pptx one slide per section, pdf one page per
+  section (Tika XHTML `div.page` / `div.slide`). A numbered list, table or procedure is never
+  cut in two. Target ~500–1,000 tokens per section (small models lose accuracy on long
+  prompts); a larger section is split at paragraph boundaries and each part keeps the
+  heading path, e.g. "Onboarding > Setup > Steps". For text files `start`/`end` are offsets
+  in the file, so the edits still land in the original text.
+- **3. Router seam.** Routing sits behind a small interface (`Router`: change request +
+  sections of a file → candidate sections). Stage 7 ships one implementation, the text
+  search in (4). Stage 8 adds a second signal behind the same interface; nothing else changes.
+- **4. Route: which sections might be affected (text search).** One model call turns the
+  change request into search terms *and* related phrasings, e.g. "Java 17, JDK 17,
+  temurin:17" or, for a workflow change, "onboarding steps, first step, step numbers,
+  N-step process, prerequisites". A plain search (no model) finds them in each file;
+  neighbouring sections of a hit are added. Lean toward recall: an extra section costs one
+  cheap Scanner call, a missed one is silent. No model reading of outlines (too unreliable
+  at 1–2B). Expected weak spot: references that paraphrase the change and share no words
+  with it; stage 9 measures that, stage 8 is the planned fix.
+- **5. Scan per section: a yes/no question.** `ScannerAgent` gets the change request, the
+  file name, the heading path and one section, and answers only "must this passage change
+  because of the request?". `Verdict(reason, quote, affected)` — reason first, so the model
+  explains before it decides. `quote` must appear in the section (checked in Java); a quote
+  that does not appear → retried once, then counted as an error, never as "No change".
+  A file is affected if any section is.
+- **6. Edit by paragraph number.** For an affected section the Editor sees the section (the
+  whole procedure/list if the hit is inside one) with numbered paragraphs, and returns
+  `Edits(List<Edit(paragraph, newText)>)`; `newText` may hold several paragraphs (to insert,
+  rewrite or renumber). Kai swaps the paragraphs by offset, so an edit cannot fail to match;
+  the "Could not apply" retry is no longer needed for these. Office/PDF stay "Update by
+  hand" (stage 4b unchanged).
+- **7. Ripple pass (moved to stage 9).** After the edits (or flags) for a file are known, Kai searches that file
+  and the other scanned files for references to what changed: step numbers, counts
+  ("three steps"), the procedure's heading or name. Hits not already checked go through the
+  Scanner. This catches "go back to step 2" and "the 4-step process" elsewhere.
+- **8. Review: Java checks first, model optional.** Always, in Java: every edit's paragraph
+  exists, edits don't overlap, text outside the edited paragraphs is unchanged, each quote
+  is real. The model Reviewer (diff of the changed sections only, not both whole files) always
+  runs (no switch: one consistent experience). `Diff` runs per section, which also
+  removes the memory problem.
+- **9. Show coverage.** The report shows per file "N of M sections checked" with a folded
+  list of skipped sections, so a miss is visible and the user can make the call.
+- **Model settings:** temperature 0; `spec.useProviderStructuredOutput()` so llama-server /
+  Ollama enforce the JSON schema while generating (essential at this size: tiny models
+  break free-form JSON); fixed text (system prompt + change request) first and the section
+  last, so the server can reuse its prompt cache; llama-server parallel slots (`-np`) equal
+  to `kai.scan.parallel`. On CPU the cost is mostly reading the prompt, so routing (4) and
+  small sections (2) are the main speed levers.
+- **Progress log:** per file "Routing: 12 of 840 sections to check", then per section as now.
+- **Not in this stage:** embeddings (stage 8), disk cache of extracted text, Office
+  write-back (4b).
+- **Open (check before coding):**
+  - Exact Tika XHTML markers for slides/pages in Tika 4.0.0 (sources jar).
+  - Section size: fixed target, or a key `kai.scan.section-tokens`?
+
+Stage 8: embeddings for routing, optional (planned 2026-10-28, not started; needs stage 7):
+
+- **Covers paraphrases, not numbering.** Embeddings find sections on the same topic that share no
+  words with the request. They do not find "go back to step 2" when step 2 is renumbered: that
+  needs the ripple pass (stage 9), which is plain Java and works without the embedding model.
+- **Why:** text search (stage 7) misses references that paraphrase the change and share no
+  words with it ("Before you deploy, you first need portal access…"). Similarity between
+  the change request and each section finds those.
+- **Optional by design.** The embedding model is one more bundled file (~25–100 MB,
+  MiniLM class; the Java runtime is ~190 MB, the chat model 1–2.5 GB), but Kai does not
+  depend on it. Present → routing uses similarity **and** text search (either is enough to
+  make a section a candidate). Missing or failing to load → text search only; the start
+  page says "Routing: keywords only, paraphrased references may be missed" and the report's
+  "N of M sections checked" line shows the gap. Kai starts either way (config problems never
+  make it exit).
+- **Shipping:** a file in the package next to the program (like `models/`), found by its
+  presence, so no new key is needed (proposed). Works air-gapped. The online package could
+  use the gateway's `/v1/embeddings` if it has one; not assumed.
+- **How it works:** each section (heading path + text) is embedded once at extraction and
+  cached in memory with the text (a disk cache is a later option). The change request is
+  embedded per scan; per file, the top-N sections above a threshold join the candidates.
+  Plugs in as a second `Router` signal (stage 7, item 3).
+- **Progress log / start page:** "Routing: 12 of 840 sections (9 by keywords, 3 by meaning)";
+  start page shows whether the embedding model is loaded.
+- **Open (check before coding):**
+  - How to run it from Java without a second runtime: Spring AI's ONNX
+    `TransformersEmbeddingModel` (check it exists in 2.0.1 and runs offline with a bundled
+    model), or llama-server `--embedding` with a GGUF embedding model behind the
+    OpenAI-compatible `/v1/embeddings`. Pick one, not both.
+  - Similarity threshold and top-N per file (tune in stage 9).
+- **Keep or drop:** decided by stage 9. If recall with embeddings is not clearly better than
+  without, leave the model out of the package and keep Kai dependency-free.
+
+Stage 9: contextual test case + model choice (planned 2026-10-28, do later):
+
+- **Ripple pass (built here, after the baseline).** Run the current pipeline on the workflow case first and
+  record misses. Then build the ripple pass: after edits, search the file and the other scanned files for
+  the changed step numbers, counts and procedure names; unchecked hits go through the Scanner. Add it as a
+  third column (with/without embeddings, with/without ripple) to show which misses each one fixes.
+- **Why:** the four existing requests are fact changes with a literal hook ("8080"). A new
+  step in a workflow has no hook: affected text says "the 4-step process", "after step 2"
+  or "first, sign in to the portal". This stage measures how well Kai finds those, and picks
+  the **smallest model that is good enough** to bundle.
+- **Test documents** (added to `sampleDocs/`):
+  - `app-onboarding-runbook.md` gets (or already has) a numbered deploy procedure, plus a
+    later paragraph "If the build fails, go back to step 2".
+  - `onboarding-checklist.pptx` ("5-step checklist deck") is the same workflow in slides.
+  - `README.md` overview mentions "five steps" in prose, without listing them.
+  - New `team-faq.md`: paraphrases the workflow ("Before you deploy, you first need
+    portal access…") with no step numbers and none of the procedure's words.
+  - New negative: `incident-process.md`, a different numbered procedure that must not change.
+  - New large file: a generated ~300 MB pdf or pptx with the workflow on one page/slide near
+    the end (past the old 100,000-character limit).
+- **Change request:** "Add a new first step to app onboarding: request a cost-centre code
+  before anything else. All later steps move down by one."
+- **Expected spots** (fill in exact lines once the docs are written): the procedure in the
+  runbook (new step + renumbering), the "go back to step 2" line, the checklist deck,
+  "five steps" in README, the FAQ paraphrase, the page in the large file. Not affected:
+  `incident-process.md` and the true negatives above.
+- **Also re-run** the four fact-change requests from "Sample documents" (expected counts
+  above) on each model, so a small model is not chosen on one test alone.
+- **With vs without embeddings:** every model is run twice, embeddings on and off, to see
+  whether the extra file earns its place (stage 8's keep-or-drop).
+- **Models to compare** (Q4, CPU only; names to be checked when downloading): ~1–1.7B
+  (e.g. Qwen3-1.7B, Qwen2.5-1.5B-Instruct, Llama-3.2-1B), ~3–4B (e.g. Qwen3-4B), plus the
+  online model as the reference. Not below ~1B and not Q2 (structured output breaks).
+  Each run is a change on the start page; no code changes.
+- **Machine:** run on a modest laptop (8 GB RAM, no GPU) and write down its spec, since
+  "runs easily on any laptop" is about speed as much as accuracy.
+- **Measure per run:** spots found / expected (recall), wrongly flagged files, edits that
+  were correct after review, scan time, model calls, peak RAM.
+  Run on the current pipeline (if possible, as a baseline), after stage 7, and after stage 8.
+- **Decide:** the smallest model with acceptable recall and few wrong flags becomes the
+  bundled default; and whether the
+  embedding model ships (see "With vs without embeddings").
+
+| Run | Model | Found / expected | Wrongly flagged | Correct edits | Scan time | Model calls | Peak RAM |
+|---|---|---|---|---|---|---|---|---|
+| current pipeline | online | propose / on | | | | | | |
+| after stage 7 | online | propose / on | | | | | | |
+| after stage 7 | ~4B | propose / on | | | | | | |
+| after stage 7 | ~1.5B | propose / off | | | | | | |
+| after stage 7 | ~1.5B | flag / off | | | | | | |
+| after stage 8 (embeddings on) | ~4B | propose / on | | | | | | |
+| after stage 8 (embeddings on) | ~1.5B | propose / off | | | | | | |
+| after stage 8 (embeddings on) | ~1.5B | flag / off | | | | | | |
 
 ## Demo script (draft)
 
